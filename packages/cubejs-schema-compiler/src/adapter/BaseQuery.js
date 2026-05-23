@@ -26,6 +26,7 @@ import {
 } from '@cubejs-backend/shared';
 
 import { CubeSymbols } from '../compiler/CubeSymbols';
+import { EXPLICIT_JOIN_HINT_SENTINEL, isExplicitJoinHint, joinHintPath } from '../compiler/JoinGraph';
 import { UserError } from '../compiler/UserError';
 import { SqlParser } from '../parser/SqlParser';
 import { BaseDimension } from './BaseDimension';
@@ -351,7 +352,31 @@ export class BaseQuery {
 
       this.canUseNativeSqlPlannerPreAggregation = fullAggregateMeasures.multiStageMembers.length > 0;
     }
-    this.queryLevelJoinHints = this.options.joinHints ?? [];
+    // The cubesql egraph rewrites `__cubeExplicitJoinField` ON clauses into
+    // hint vectors whose FIRST element is `EXPLICIT_JOIN_HINT_SENTINEL`. The
+    // sentinel rides inside the same `joinHints` array as legacy hints so the
+    // original SQL JOIN clause order is preserved end-to-end (the alternative
+    // — splitting into two arrays and concatenating — silently re-roots
+    // queries that put an explicit JOIN before a regular one). Here we parse
+    // each entry: a sentinel-prefixed array becomes a typed `ExplicitJoinHint`
+    // at the same position; everything else passes through untouched.
+    // REST/GraphQL clients can't accidentally trigger this — the field is no
+    // longer in the Joi schema, so unknown keys reject and the sentinel string
+    // is documented internal-only.
+    // Defensive early normalization of sentinel-prefixed hints into typed
+    // `ExplicitJoinHint`s, so JS-side downstream consumers (enrichHintsWithJoinMap,
+    // collectJoinHints, etc.) see the typed shape uniformly. `JoinGraph.buildJoin`
+    // performs the same normalization at its entry point — that's the path the
+    // Tesseract bridge uses, so the JS pipeline doesn't strictly need to pre-
+    // parse here, but doing so keeps `queryLevelJoinHints` semantically rich for
+    // every JS code path that reads it before reaching JoinGraph.
+    const rawHints = this.options.joinHints ?? [];
+    this.queryLevelJoinHints = rawHints.map(hint => {
+      if (Array.isArray(hint) && hint.length > 1 && hint[0] === EXPLICIT_JOIN_HINT_SENTINEL) {
+        return { path: hint.slice(1), explicit: true };
+      }
+      return hint;
+    });
     this.prebuildJoin();
 
     this.cubeAliasPrefix = this.options.cubeAliasPrefix;
@@ -424,7 +449,7 @@ export class BaseQuery {
       const allJoinHints = constructJH();
       prevJoin = newJoin;
       newJoin = this.joinGraph.buildJoin(allJoinHints);
-      const allJoinHintsFlatten = new Set(allJoinHints.flat());
+      const allJoinHintsFlatten = new Set(allJoinHints.flatMap(h => joinHintPath(h)));
       const joinMembersJoinHints = this.collectJoinHintsFromMembers(this.joinMembersFromJoin(newJoin));
 
       const iterationCollectedHints = joinMembersJoinHints.filter(j => !allJoinHintsFlatten.has(j));
@@ -557,15 +582,61 @@ export class BaseQuery {
     // join maps on per view basis.
     const allPaths = Object.values(joinMap).flat();
 
+    // When the bidirectional-joins feature is enabled, view-derived join_paths are
+    // the second documented entry point allowed to use reverse-edge synthesis.
+    // Tag rewritten hints as `ExplicitJoinHint` so `JoinGraph.buildJoinTreeForRoot`
+    // recognizes them. When the feature is off this stays a no-op cast (plain
+    // string[]) — matching pre-PR behavior exactly. Existing array-shaped hints
+    // (e.g., already-typed REST `joinHints`) are passed through unchanged so they
+    // don't accidentally pick up explicit semantics from this enrichment step.
+    const reverseAllowed = getEnv('bidirectionalSqlJoins');
+
+    // An already-array hint qualifies as a view-derived path when it appears as
+    // a prefix of any joinMap path; only those should pick up the explicit-
+    // direction tag when the feature is on. REST-supplied `joinHints` arrays
+    // and other non-view sources won't match a joinMap entry and pass through
+    // unchanged.
+    const matchesJoinMapPrefix = (arr) => {
+      if (arr.length < 2) return false;
+      for (const path of allPaths) {
+        if (path.length < arr.length) continue;
+        let prefix = true;
+        for (let i = 0; i < arr.length; i++) {
+          if (path[i] !== arr[i]) { prefix = false; break; }
+        }
+        if (prefix) return true;
+      }
+      return false;
+    };
+
     return hints.map(hint => {
+      if (isExplicitJoinHint(hint)) {
+        // Already tagged elsewhere (e.g., sentinel parsing in the BaseQuery
+        // constructor) — preserve as-is.
+        return hint;
+      }
       if (Array.isArray(hint)) {
+        // Array hints that came from a view's joinMap should opt into explicit
+        // direction so reverse-edge synthesis can fire when needed. Array
+        // hints from anywhere else (REST `joinHints`, member-resolution
+        // accumulators) stay plain so they keep the strictly directed
+        // traversal of pre-feature behavior.
+        if (reverseAllowed && matchesJoinMapPrefix(hint)) {
+          return { path: hint, explicit: true };
+        }
         return hint;
       }
 
       for (const path of allPaths) {
         const hintIndex = path.indexOf(hint);
         if (hintIndex !== -1) {
-          return path.slice(0, hintIndex + 1);
+          const slice = path.slice(0, hintIndex + 1);
+          if (reverseAllowed && slice.length > 1) {
+            // This rewrite came from a view's `join_path`; opt into explicit
+            // direction so a reverse traversal can synthesize the missing edge.
+            return { path: slice, explicit: true };
+          }
+          return slice;
         }
       }
 
@@ -2286,7 +2357,11 @@ export class BaseQuery {
         return [{
           sql: cubeSql,
           alias: cubeAlias,
-          on: `${this.evaluateSql(j.originalFrom, j.join.sql)}${conditions ? ` AND (${conditions})` : ''}`
+          // Use declaredOn (not originalFrom) so `${CUBE}` in join.sql resolves against the
+          // cube whose joins: block declared the join. For declared edges this equals
+          // originalFrom; for synthetic reverse edges declaredOn points to the original
+          // declaring cube while originalFrom/originalTo are swapped to reflect traversal.
+          on: `${this.evaluateSql(j.declaredOn, j.join.sql)}${conditions ? ` AND (${conditions})` : ''}`
           // TODO handle the case when sub query referenced by a foreign cube on other side of a join
         }].concat((subQueryDimensionsByCube[j.originalTo] || []).map(d => this.subQueryJoin(d)));
       }
@@ -2754,7 +2829,7 @@ export class BaseQuery {
       const allJoinHints = constructJH();
       prevJoin = newJoin;
       newJoin = this.joinGraph.buildJoin(allJoinHints);
-      const allJoinHintsFlatten = new Set(allJoinHints.flat());
+      const allJoinHintsFlatten = new Set(allJoinHints.flatMap(h => joinHintPath(h)));
       const joinMembersJoinHints = this.collectJoinHintsFromMembers(this.joinMembersFromJoin(newJoin));
 
       const iterationCollectedHints = joinMembersJoinHints.filter(j => !allJoinHintsFlatten.has(j));

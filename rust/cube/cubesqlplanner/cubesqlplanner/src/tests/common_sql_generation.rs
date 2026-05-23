@@ -412,6 +412,62 @@ async fn test_segment_with_subquery_dimension_in_view_with_dimension() {
     }
 }
 
+// Verifies that the join graph synthesizes a reverse JoinEdge ONLY when a hint
+// is flagged with the explicit-direction sentinel (the wire equivalent of the
+// JS `ExplicitJoinHint`). The mock schema declares `orders → customers`. Plain
+// reverse hints must continue to fail (matching production strictly-directed
+// behavior); sentinel-prefixed reverse hints synthesize a `JoinEdge`.
+#[test]
+fn test_reverse_direction_join_hint_synthesizes_edge() {
+    let schema = MockSchema::from_yaml_file("common/integration_joins.yaml");
+    let test_context = TestContext::new(schema).unwrap();
+
+    // Sanity: the declared direction works exactly as today.
+    let forward_query = indoc! {"
+        dimensions:
+          - customers.name
+        measures:
+          - orders.count
+        joinHints:
+          - [orders, customers]
+    "};
+    test_context
+        .build_sql(forward_query)
+        .expect("declared-direction join should succeed");
+
+    // Plain reverse (no sentinel) must STILL fail — only explicit-flagged hints
+    // are allowed to synthesize. Mirrors production where `__cubeJoinField` and
+    // REST `joinHints` never get reverse-edge synthesis.
+    let plain_reverse_query = indoc! {"
+        dimensions:
+          - orders.id
+        measures:
+          - customers.count
+        joinHints:
+          - [customers, orders]
+    "};
+    assert!(
+        test_context.build_sql(plain_reverse_query).is_err(),
+        "plain (non-sentinel) reverse hint must NOT use reverse-edge synthesis"
+    );
+
+    // Sentinel-prefixed reverse: the wire format produced by cubesql's egraph
+    // when the SQL query used `__cubeExplicitJoinField`. The planner synthesizes
+    // a reverse `JoinEdge` (swapping from/to, inverting relationship, preserving
+    // declared_on) so the query can traverse against the declared direction.
+    let explicit_reverse_query = indoc! {"
+        dimensions:
+          - orders.id
+        measures:
+          - customers.count
+        joinHints:
+          - [__cubeExplicitJoinField__sentinel__, customers, orders]
+    "};
+    test_context
+        .build_sql(explicit_reverse_query)
+        .expect("explicit-flagged reverse hint should succeed via synthesized edge");
+}
+
 #[test]
 fn test_explicit_empty_order_omits_order_by_clause() {
     let schema = MockSchema::from_yaml_file("common/diamond_joins.yaml");

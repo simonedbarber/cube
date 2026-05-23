@@ -1112,7 +1112,7 @@ export class PreAggregations {
     return join.joins.map(j => {
       joinMap.add(j.originalFrom);
 
-      const memberPaths = this.query.collectMemberNamesFor(() => this.query.evaluateSql(j.originalFrom, j.join.sql)).map(m => m.split('.'));
+      const memberPaths = this.query.collectMemberNamesFor(() => this.query.evaluateSql(j.declaredOn, j.join.sql)).map(m => m.split('.'));
 
       const invalidMembers = memberPaths.filter(m => !joinMap.has(m[0]) && m[0] !== j.originalTo);
       if (invalidMembers.length) {
@@ -1584,7 +1584,7 @@ export class PreAggregations {
         ...join.map(
           j => ({
             ...sqlAndAlias(j.toPreAggObj),
-            on: this.query.evaluateSql(j.originalFrom, j.join.sql, {
+            on: this.query.evaluateSql(j.declaredOn, j.join.sql, {
               sqlResolveFn: (symbol, cube, n) => {
                 const path = this.query.cubeEvaluator.pathFromArray([cube, n]);
                 const member =

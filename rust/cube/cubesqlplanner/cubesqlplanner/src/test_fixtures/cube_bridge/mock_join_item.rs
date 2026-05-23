@@ -15,6 +15,10 @@ pub struct MockJoinItem {
     to: String,
     original_from: String,
     original_to: String,
+    // Defaults to None so the static_data fallback in JoinPlanner picks original_from
+    // for declared edges — only the synthetic-reverse path needs to set this.
+    #[builder(default)]
+    declared_on: Option<String>,
 
     // Trait field
     join: Rc<MockJoinItemDefinition>,
@@ -26,7 +30,8 @@ impl_static_data!(
     from,
     to,
     original_from,
-    original_to
+    original_to,
+    declared_on
 );
 
 impl JoinItem for MockJoinItem {

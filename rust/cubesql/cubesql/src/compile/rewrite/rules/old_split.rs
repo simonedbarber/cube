@@ -5328,6 +5328,7 @@ impl OldSplitRules {
                                 || cube.lookup_segment(&column.name).is_some()
                                 || column.name == "__user"
                                 || column.name == "__cubeJoinField"
+                                || column.name == "__cubeExplicitJoinField"
                             {
                                 return true;
                             }
@@ -5434,6 +5435,7 @@ impl OldSplitRules {
                                 || cube.lookup_segment(&column.name).is_some()
                                 || column.name == "__user"
                                 || column.name == "__cubeJoinField"
+                                || column.name == "__cubeExplicitJoinField"
                             {
                                 return true;
                             }

@@ -4080,7 +4080,9 @@ impl FilterRules {
                     members_var,
                     &aliases,
                 ) {
-                    if left_member_name.ends_with(".__cubeJoinField") {
+                    let is_join_field_left = left_member_name.ends_with(".__cubeJoinField")
+                        || left_member_name.ends_with(".__cubeExplicitJoinField");
+                    if is_join_field_left {
                         if let Some((right_member_name, _)) = Self::filter_member_name(
                             egraph,
                             subst,
@@ -4090,7 +4092,9 @@ impl FilterRules {
                             members_var,
                             &aliases,
                         ) {
-                            if right_member_name.ends_with("__cubeJoinField") {
+                            if right_member_name.ends_with("__cubeJoinField")
+                                || right_member_name.ends_with("__cubeExplicitJoinField")
+                            {
                                 return true;
                             }
                         }
@@ -4129,7 +4133,9 @@ impl FilterRules {
                     members_var,
                     &aliases,
                 ) {
-                    if left_member_name.ends_with(".__cubeJoinField") {
+                    if left_member_name.ends_with(".__cubeJoinField")
+                        || left_member_name.ends_with(".__cubeExplicitJoinField")
+                    {
                         return true;
                     }
                 }

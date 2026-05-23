@@ -9,11 +9,25 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
+/// Sentinel that marks a join-hint vector as an explicit-direction request
+/// (the wire-format equivalent of the JS `ExplicitJoinHint`). Must match
+/// `EXPLICIT_JOIN_HINT_SENTINEL` in
+/// `rust/cubesql/cubesql/src/compile/rewrite/rules/members.rs` and the JS
+/// constant in `packages/cubejs-schema-compiler/src/compiler/JoinGraph.ts`.
+const EXPLICIT_JOIN_HINT_SENTINEL: &str = "__cubeExplicitJoinField__sentinel__";
+
 /// Represents an edge in the join graph
 ///
 /// Each edge represents a join relationship between two cubes, including both
 /// the current routing (from/to) and the original cube names (original_from/original_to).
 /// This distinction is important when dealing with cube aliases.
+///
+/// `declared_on` records the cube whose `joins:` block declared the underlying
+/// join. For declared edges it equals `original_from`. For synthetic reverse edges
+/// (produced when an explicit-direction hint traverses against the declared
+/// direction), `from`/`to`/`original_from`/`original_to` are swapped while
+/// `declared_on` stays pointed at the original declaring cube so the join SQL
+/// still resolves `${CUBE}` correctly. `synthetic` marks edges built this way.
 ///
 /// ```
 #[derive(Debug, Clone)]
@@ -23,6 +37,9 @@ pub struct JoinEdge {
     pub to: String,
     pub original_from: String,
     pub original_to: String,
+    pub declared_on: String,
+    #[allow(dead_code)]
+    pub synthetic: bool,
 }
 
 /// Mock implementation of JoinGraph for testing
@@ -124,6 +141,8 @@ impl MockJoinGraph {
                 to: join_name.clone(),
                 original_from: cube_name.clone(),
                 original_to: join_name.clone(),
+                declared_on: cube_name.clone(),
+                synthetic: false,
             };
 
             let edge_key = Self::edge_key(cube_name, join_name);
@@ -162,6 +181,37 @@ impl MockJoinGraph {
         }
     }
 
+    // Build a synthetic reverse JoinEdge for explicit-direction traversal when the
+    // declared direction is the opposite of what the user asked for. Mirrors the JS
+    // implementation in `JoinGraph.synthesizeReverseEdge` — swaps direction fields
+    // and inverts the normalized relationship value (`hasMany` ↔ `belongsTo`;
+    // `hasOne` unchanged) while preserving `declared_on` so SQL still resolves
+    // against the original declaring cube.
+    fn synthesize_reverse_edge(&self, declared: &JoinEdge) -> JoinEdge {
+        let original_rel = declared.join.static_data().relationship.clone();
+        let inverted_rel = match original_rel.as_str() {
+            "hasMany" => "belongsTo".to_string(),
+            "belongsTo" => "hasMany".to_string(),
+            "one_to_many" => "many_to_one".to_string(),
+            "many_to_one" => "one_to_many".to_string(),
+            _ => original_rel.clone(),
+        };
+        let sql = declared.join.sql_template();
+        let synthetic_def = MockJoinItemDefinition::builder()
+            .relationship(inverted_rel)
+            .sql(sql)
+            .build();
+        JoinEdge {
+            join: Rc::new(synthetic_def),
+            from: declared.to.clone(),
+            to: declared.from.clone(),
+            original_from: declared.original_to.clone(),
+            original_to: declared.original_from.clone(),
+            declared_on: declared.declared_on.clone(),
+            synthetic: true,
+        }
+    }
+
     fn joins_by_path(&self, path: &[String]) -> Vec<JoinEdge> {
         let mut result = Vec::new();
         for i in 0..path.len().saturating_sub(1) {
@@ -181,21 +231,49 @@ impl MockJoinGraph {
         use crate::test_fixtures::graph_utils::find_shortest_path;
         use std::collections::HashSet;
 
-        let (root_name, additional_cubes) = match root {
-            JoinHintItem::Single(name) => (name.clone(), Vec::new()),
+        // Strip the explicit-direction sentinel before path traversal so its
+        // string doesn't get interpreted as a cube name. The same flag controls
+        // whether reverse-edge synthesis is permitted for the hint's steps:
+        // sentinel-prefixed hints correspond to the JS `ExplicitJoinHint` shape
+        // and are the only ones in production allowed to synthesize a reverse
+        // edge. Non-sentinel hints stay on the strictly directed graph, matching
+        // pre-feature behavior.
+        let unwrap_explicit = |path: &[String]| -> (bool, Vec<String>) {
+            if let Some(first) = path.first() {
+                if first.as_str() == EXPLICIT_JOIN_HINT_SENTINEL {
+                    return (true, path.iter().skip(1).cloned().collect());
+                }
+            }
+            (false, path.to_vec())
+        };
+
+        let (root_name, root_is_explicit, additional_cubes) = match root {
+            JoinHintItem::Single(name) => (name.clone(), false, Vec::new()),
             JoinHintItem::Vector(path) => {
-                if path.is_empty() {
+                let (is_explicit, stripped) = unwrap_explicit(path);
+                if stripped.is_empty() {
                     return None;
                 }
-                let root_name = path[0].clone();
-                let additional = if path.len() > 1 {
-                    vec![JoinHintItem::Vector(path[1..].to_vec())]
+                let root_name = stripped[0].clone();
+                let additional = if stripped.len() > 1 {
+                    // Carry the explicit flag through to the tail by re-prefixing
+                    // with the sentinel so the inner loop's detection still fires.
+                    let mut tail = Vec::with_capacity(stripped.len());
+                    if is_explicit {
+                        tail.push(EXPLICIT_JOIN_HINT_SENTINEL.to_string());
+                    }
+                    tail.extend(stripped[1..].iter().cloned());
+                    vec![JoinHintItem::Vector(tail)]
                 } else {
                     Vec::new()
                 };
-                (root_name, additional)
+                (root_name, is_explicit, additional)
             }
         };
+        // `root_is_explicit` is currently informational — every per-hint pass
+        // re-detects the sentinel below — but we keep the binding so future
+        // refactors that need the root's explicit state don't have to recompute.
+        let _ = root_is_explicit;
 
         let mut all_cubes_to_join = additional_cubes;
         all_cubes_to_join.extend_from_slice(cubes_to_join);
@@ -206,9 +284,9 @@ impl MockJoinGraph {
         let mut next_index = 0;
 
         for join_hint in &all_cubes_to_join {
-            let path_elements = match join_hint {
-                JoinHintItem::Single(name) => vec![name.clone()],
-                JoinHintItem::Vector(path) => path.clone(),
+            let (hint_explicit, path_elements) = match join_hint {
+                JoinHintItem::Single(name) => (false, vec![name.clone()]),
+                JoinHintItem::Vector(path) => unwrap_explicit(path),
             };
 
             let mut prev_node = root_name.clone();
@@ -224,15 +302,32 @@ impl MockJoinGraph {
                 }
 
                 let path = find_shortest_path(&self.nodes, &prev_node, to_join);
-                path.as_ref()?;
-
-                let path = path.unwrap();
-
-                let found_joins = self.joins_by_path(&path);
-
-                for join in found_joins {
-                    all_joins.push((next_index, join));
-                    next_index += 1;
+                if let Some(path) = path {
+                    let found_joins = self.joins_by_path(&path);
+                    for join in found_joins {
+                        all_joins.push((next_index, join));
+                        next_index += 1;
+                    }
+                } else if hint_explicit {
+                    // The directed edge isn't declared and the hint opted into
+                    // explicit-direction semantics — synthesize a forward
+                    // `JoinEdge` from the reverse declared edge if one exists.
+                    // Swap from/to and the identity fields, invert the
+                    // multiplication-driving relationship, and preserve
+                    // `declared_on` so the join SQL still resolves `${CUBE}`
+                    // correctly. Non-explicit hints with no directed path stay on
+                    // the strictly directed graph (return None) — that matches
+                    // production `JoinGraph.buildJoinTreeForRoot` semantics.
+                    let reverse_key = Self::edge_key(to_join, &prev_node);
+                    if let Some(declared) = self.edges.get(&reverse_key) {
+                        let synthetic = self.synthesize_reverse_edge(declared);
+                        all_joins.push((next_index, synthetic));
+                        next_index += 1;
+                    } else {
+                        return None;
+                    }
+                } else {
+                    return None;
                 }
 
                 nodes_joined.insert(to_join.clone());
@@ -345,6 +440,7 @@ impl MockJoinGraph {
                 .to(edge.to.clone())
                 .original_from(edge.original_from.clone())
                 .original_to(edge.original_to.clone())
+                .declared_on(Some(edge.declared_on.clone()))
                 .join(edge.join.clone())
                 .build(),
         )

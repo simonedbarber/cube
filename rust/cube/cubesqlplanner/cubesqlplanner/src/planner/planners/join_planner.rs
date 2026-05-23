@@ -99,8 +99,12 @@ impl JoinPlanner {
         ))
     }
 
-    /// Compiles the ON SQL of a join item into a `SqlCall` rooted at
-    /// the `from` cube.
+    /// Compiles the ON SQL of a join item into a `SqlCall` rooted at the cube whose
+    /// `joins:` block declared the underlying join (`declared_on`). For declared
+    /// edges this equals `original_from`; for synthetic reverse edges produced by
+    /// explicit-direction traversal it points at the original declaring cube so the
+    /// SQL still resolves `${CUBE}` correctly. Falls back to `original_from` when
+    /// the bridge hasn't been updated to send `declared_on`.
     pub fn compile_join_condition(
         &self,
         join_item: Rc<dyn JoinItem>,
@@ -108,8 +112,12 @@ impl JoinPlanner {
         let definition = join_item.join()?;
         let evaluator_compiler_cell = self.query_tools.evaluator_compiler().clone();
         let mut evaluator_compiler = evaluator_compiler_cell.borrow_mut();
-        evaluator_compiler
-            .compile_sql_call(&join_item.static_data().original_from, definition.sql()?)
+        let static_data = join_item.static_data();
+        let sql_cube_context = static_data
+            .declared_on
+            .as_ref()
+            .unwrap_or(&static_data.original_from);
+        evaluator_compiler.compile_sql_call(sql_cube_context, definition.sql()?)
     }
 
     /// Materialises the join from `join_hints` and resolves the

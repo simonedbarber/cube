@@ -2804,7 +2804,7 @@ impl MemberRules {
         let right_join_hints_var = var!(right_join_hints_var);
         let out_join_hints_var = var!(out_join_hints_var);
         move |egraph, subst| {
-            let Some((left_cube, right_cube)) = is_proper_cube_join_condition(
+            let Some((left_cube, right_cube, is_explicit)) = is_proper_cube_join_condition(
                 egraph,
                 subst,
                 left_members_var,
@@ -2813,6 +2813,23 @@ impl MemberRules {
                 right_on_var,
             ) else {
                 return false;
+            };
+
+            // For `__cubeJoinField` we keep the existing two-element shape, which is
+            // bit-for-bit what the converter has always serialized to
+            // `V1LoadRequestQuery.join_hints`. For `__cubeExplicitJoinField` we
+            // prepend a sentinel so the converter can split it off into the new
+            // `explicit_join_hints` field — the inner egraph rewrites that only
+            // chain/clone these hints (e.g., subsequent push_down_cube_join calls,
+            // CROSS JOIN merge) keep working unchanged.
+            let emitted_hint: Vec<String> = if is_explicit {
+                vec![
+                    EXPLICIT_JOIN_HINT_SENTINEL.to_string(),
+                    left_cube,
+                    right_cube,
+                ]
+            } else {
+                vec![left_cube, right_cube]
             };
 
             for left_alias_to_cube in
@@ -2840,7 +2857,7 @@ impl MemberRules {
                                     .iter()
                                     .chain(right_join_hints.iter())
                                     .cloned()
-                                    .chain(iter::once(vec![left_cube, right_cube]))
+                                    .chain(iter::once(emitted_hint.clone()))
                                     .collect(),
                             );
 
@@ -3021,14 +3038,14 @@ pub fn min_granularity(granularity_a: &String, granularity_b: &String) -> Option
     }
 }
 
-// Return None if `join_on` is not a __cubeJoinField
-// Return Some(cube_name) if it is
+// Return None if `join_on` is not a __cubeJoinField or __cubeExplicitJoinField.
+// Returns the cube name and the matched field name when it is.
 fn is_join_on_cube_join_field(
     egraph: &mut CubeEGraph,
     subst: &Subst,
     cube_members_var: Var,
     join_on: &[Column],
-) -> Option<String> {
+) -> Option<(String, String)> {
     if join_on.len() != 1 {
         return None;
     }
@@ -3039,14 +3056,45 @@ fn is_join_on_cube_join_field(
     let Member::VirtualField { name, cube, .. } = join_member else {
         return None;
     };
-    if name != "__cubeJoinField" {
+    if name != "__cubeJoinField" && name != "__cubeExplicitJoinField" {
         return None;
     }
-    Some(cube.clone())
+    // `__cubeExplicitJoinField` is gated by a single env var:
+    //   CUBEJS_BIDIRECTIONAL_SQL_JOINS=true
+    // No pushdown or Tesseract dependency — the JS pipeline (REST, GraphQL,
+    // view paths, the legacy BaseQuery SQL generator) and the Tesseract
+    // pipeline both support the feature. When the flag is off the rewrite
+    // refuses to match; the downstream converter then surfaces the existing
+    // "Use __cubeJoinField" error so callers see a clear failure rather than
+    // a silent fallback.
+    if name == "__cubeExplicitJoinField" && !bidirectional_sql_joins_enabled() {
+        return None;
+    }
+    Some((cube.clone(), name.clone()))
 }
 
-// Return None if condition is not a left.__cubeJoinField = right.__cubeJoinField
-// Return Some((left_cube_name, right_cube_name)) if it is
+// Reads the `CUBEJS_BIDIRECTIONAL_SQL_JOINS` env var. Mirrors the JS-side check in
+// `JoinGraph.ts` so both layers agree on whether the explicit-field rewrite should
+// fire at all. Default: false (no behavior change vs. pre-feature).
+fn bidirectional_sql_joins_enabled() -> bool {
+    std::env::var("CUBEJS_BIDIRECTIONAL_SQL_JOINS")
+        .map(|v| v.to_lowercase() == "true")
+        .unwrap_or(false)
+}
+
+// Sentinel prefix used inside `CubeScanJoinHints` to flag a hint that originated
+// from `__cubeExplicitJoinField`. Converter splits hints with this prefix into
+// `V1LoadRequestQuery.explicit_join_hints`; everything else stays in the legacy
+// `join_hints` field with identical shape to pre-feature behavior. The string is
+// deliberately unlikely to collide with any real cube name.
+pub const EXPLICIT_JOIN_HINT_SENTINEL: &str = "__cubeExplicitJoinField__sentinel__";
+
+// Return None if the join condition is not a `left.<field> = right.<field>` where
+// `<field>` is `__cubeJoinField` or `__cubeExplicitJoinField` and both sides use
+// the SAME field. Returns `(left_cube_name, right_cube_name, is_explicit)` when it
+// is. The `is_explicit` flag distinguishes `__cubeExplicitJoinField` (bidirectional-
+// joins feature, gated) from `__cubeJoinField` (always strict-directed). Mixing
+// the two within a single ON clause is rejected so the intent is unambiguous.
 fn is_proper_cube_join_condition(
     egraph: &mut CubeEGraph,
     subst: &Subst,
@@ -3054,7 +3102,7 @@ fn is_proper_cube_join_condition(
     left_on_var: Var,
     right_cube_members_var: Var,
     right_on_var: Var,
-) -> Option<(String, String)> {
+) -> Option<(String, String, bool)> {
     egraph[subst[left_cube_members_var]]
         .data
         .member_name_to_expr
@@ -3072,24 +3120,32 @@ fn is_proper_cube_join_condition(
         .cloned()
         .collect::<Vec<_>>();
 
-    // For now this allows only exact left.__cubeJoinField = right.__cubeJoinField
+    // For now this allows only exact left.<field> = right.<field>
     // TODO implement more complex conditions
 
-    let left_cube = left_join_ons
+    let (left_cube, left_field) = left_join_ons
         .iter()
         .filter_map(|left_join_on| {
             is_join_on_cube_join_field(egraph, subst, left_cube_members_var, left_join_on)
         })
         .next()?;
 
-    let right_cube = right_join_ons
+    let (right_cube, right_field) = right_join_ons
         .iter()
         .filter_map(|right_join_on| {
             is_join_on_cube_join_field(egraph, subst, right_cube_members_var, right_join_on)
         })
         .next()?;
 
-    Some((left_cube, right_cube))
+    // Both sides of the ON clause must use the same virtual field. Mixing
+    // __cubeJoinField with __cubeExplicitJoinField in a single ON is rejected so
+    // the intent is unambiguous.
+    if left_field != right_field {
+        return None;
+    }
+
+    let is_explicit = left_field == "__cubeExplicitJoinField";
+    Some((left_cube, right_cube, is_explicit))
 }
 
 #[cfg(test)]

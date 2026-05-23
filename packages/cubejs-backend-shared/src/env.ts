@@ -317,6 +317,20 @@ const variables: Record<string, (...args: any) => any> = {
     .asInt(),
   nativeSqlPlanner: () => get('CUBEJS_TESSERACT_SQL_PLANNER').default('false').asBool(),
   nativeSqlPlannerPreAggregations: () => get('CUBEJS_TESSERACT_PRE_AGGREGATIONS').default('false').asBool(),
+  // Opt-in flag for the bidirectional SQL joins feature. When enabled, the planner
+  // may synthesize a reverse `JoinEdge` from a declared edge for two narrowly
+  // documented cases ONLY:
+  //   (a) SQL queries that explicitly use the `__cubeExplicitJoinField` virtual
+  //       column.
+  //   (b) Views whose `join_path` traverses the declared edge in the opposite
+  //       direction.
+  // All other graph traversals (REST `joinHints`, `__cubeJoinField`, member
+  // resolution, /meta export, connectedness analysis, pre-aggregation matching)
+  // continue to use the strictly directed graph regardless of this flag.
+  // Single-flag gate: no dependency on `CUBEJS_TESSERACT_SQL_PLANNER` or
+  // `CUBESQL_SQL_PUSH_DOWN`. Works in both the JS pipeline (default) and the
+  // Tesseract pipeline.
+  bidirectionalSqlJoins: () => get('CUBEJS_BIDIRECTIONAL_SQL_JOINS').default('false').asBool(),
   transpilationWorkerThreads: () => {
     const enabled = get('CUBEJS_TRANSPILATION_WORKER_THREADS')
       .default('true')

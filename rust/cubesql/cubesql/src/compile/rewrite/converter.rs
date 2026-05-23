@@ -1394,9 +1394,13 @@ impl LanguageToLogicalPlanConverter {
                 if Self::have_ungrouped_cube_scan_inside(&left)
                     || Self::have_ungrouped_cube_scan_inside(&right)
                 {
-                    if left_on.iter().any(|c| c.name == "__cubeJoinField")
-                        || right_on.iter().any(|c| c.name == "__cubeJoinField")
-                    {
+                    let uses_join_field = left_on
+                        .iter()
+                        .any(|c| c.name == "__cubeJoinField" || c.name == "__cubeExplicitJoinField")
+                        || right_on
+                            .iter()
+                            .any(|c| c.name == "__cubeJoinField" || c.name == "__cubeExplicitJoinField");
+                    if uses_join_field {
                         return Err(CubeError::internal(
                             "Can not join Cubes. This is most likely due to one of the following reasons:\n\
                             • one of the cubes contains a group by\n\
@@ -1405,7 +1409,7 @@ impl LanguageToLogicalPlanConverter {
                         ));
                     } else {
                         return Err(CubeError::internal(
-                            "Use __cubeJoinField to join Cubes".to_string(),
+                            "Use __cubeJoinField or __cubeExplicitJoinField to join Cubes".to_string(),
                         ));
                     }
                 }
@@ -2044,7 +2048,13 @@ impl LanguageToLogicalPlanConverter {
 
                 let join_hints =
                     match_data_node!(node_by_id, cube_scan_params[10], CubeScanJoinHints);
-                if join_hints.len() > 0 {
+                // Hints from the egraph travel in SQL-clause order. Entries flagged
+                // with the explicit-direction sentinel ride inside the same list so
+                // BaseQuery can reconstruct the original interleaving (e.g., a
+                // `LEFT JOIN ... __cubeExplicitJoinField LEFT JOIN ... __cubeJoinField`
+                // query keeps its FROM-cube hint first). Sentinel stripping happens
+                // BaseQuery-side, not here.
+                if !join_hints.is_empty() {
                     query.join_hints = Some(join_hints);
                 }
 

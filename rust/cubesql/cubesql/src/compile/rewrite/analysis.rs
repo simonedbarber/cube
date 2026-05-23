@@ -654,6 +654,22 @@ impl LogicalPlanAnalysis {
                             name: "__cubeJoinField".to_string(),
                         }),
                     ));
+
+                    map.push((
+                        Some(format!("{}.{}", cube.name, "__cubeExplicitJoinField")),
+                        Member::VirtualField {
+                            name: "__cubeExplicitJoinField".to_string(),
+                            cube: cube.name.clone(),
+                            expr: Expr::Column(Column {
+                                relation: Some(alias.to_string()),
+                                name: "__cubeExplicitJoinField".to_string(),
+                            }),
+                        },
+                        Expr::Column(Column {
+                            relation: Some(alias.to_string()),
+                            name: "__cubeExplicitJoinField".to_string(),
+                        }),
+                    ));
                     Some(map)
                 } else {
                     None

@@ -1575,8 +1575,13 @@ query time_. When possible, use [join paths](#join-paths) in the data model inst
 ### SQL API
 
 In queries to the [SQL API][ref-sql-api], cubes can be [joined][ref-sql-api-joins] via
-the `CROSS JOIN` clause or via `__cubeJoinField`. In any case, Cube will analyze the
-query and follow provided join hints.
+the `CROSS JOIN` clause or via `__cubeJoinField`. The SQL API also exposes
+`__cubeExplicitJoinField`, a direction-strict variant that lets you traverse
+a declared join in either direction without declaring it twice. Reverse-
+direction traversal in views' `join_path` works under the same opt-in flag
+(see the [SQL API joins reference][ref-sql-api-joins] for examples and
+pre-aggregation interaction). In any case, Cube will analyze the query and
+follow provided join hints.
 
 Let's run the following query with the data model from the [diamond subgraphs
 example](#diamond-subgraphs):

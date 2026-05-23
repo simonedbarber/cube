@@ -17,6 +17,13 @@ pub struct MockJoinItemDefinition {
     sql: String,
 }
 
+impl MockJoinItemDefinition {
+    /// Raw SQL template string (for synthesizing reverse edges in tests).
+    pub fn sql_template(&self) -> String {
+        self.sql.clone()
+    }
+}
+
 impl_static_data!(
     MockJoinItemDefinition,
     JoinItemDefinitionStatic,

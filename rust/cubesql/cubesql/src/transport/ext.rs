@@ -284,6 +284,22 @@ impl V1CubeMetaExt for CubeMeta {
             can_be_null: true,
         });
 
+        columns.push(CubeColumn {
+            member_name: "__cubeExplicitJoinField".to_string(),
+            name: "__cubeExplicitJoinField".to_string(),
+            description: Some(
+                "Virtual column for joining cubes with strict direction. Requires \
+                 CUBEJS_BIDIRECTIONAL_SQL_JOINS=true. Unlike __cubeJoinField, the \
+                 SQL FROM cube is pinned as the join root and a reverse join edge \
+                 is synthesized when the data model declared only the opposite \
+                 direction. Pre-aggregations built for one direction will not be \
+                 served for queries that explicitly request the reverse direction."
+                    .to_string(),
+            ),
+            column_type: ColumnType::String,
+            can_be_null: true,
+        });
+
         columns
     }
 
