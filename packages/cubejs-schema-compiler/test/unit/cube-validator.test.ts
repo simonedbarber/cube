@@ -421,6 +421,29 @@ describe('Cube Validation', () => {
       expect(validationResult.error).toBeTruthy();
     });
 
+    it('numberAgg measure is valid without multiStage', async () => {
+      const cubeValidator = new CubeValidator(new CubeSymbols());
+      const cube = {
+        name: 'name',
+        sql: () => '',
+        fileName: 'fileName',
+        measures: {
+          median_price: {
+            type: 'numberAgg',
+            sql: () => 'PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY price)'
+          }
+        }
+      };
+
+      const validationResult = cubeValidator.validate(cube, {
+        error: (message: any, _e: any) => {
+          console.log(message);
+        }
+      } as any);
+
+      expect(validationResult.error).toBeFalsy();
+    });
+
     it('2 timeShifts, 1 without timeDimension', async () => {
       const cubeValidator = new CubeValidator(new CubeSymbols());
       const cube = {
