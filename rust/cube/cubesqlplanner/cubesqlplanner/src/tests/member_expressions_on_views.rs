@@ -254,3 +254,88 @@ async fn test_many_to_one_view_patched_measure_filter() -> Result<(), CubeError>
 
     Ok(())
 }
+
+/// Regression: a dimension-only member expression that references two dimensions of the SAME
+/// underlying cube (`root_dim` and `root_test_dim`, both on `many_to_one_root`) must plan
+/// successfully. Before the de-dup fix in
+/// `MemberExpressionSymbol::cube_names_if_dimension_only_expression`, the collected cube-name list
+/// was `["many_to_one_root", "many_to_one_root"]`, which tripped the `cube_names.len() == 1` guard
+/// in `collect_multiplied_measures` and failed with
+/// "Expected single cube for dimension-only measure".
+#[tokio::test(flavor = "multi_thread")]
+async fn test_many_to_one_view_same_cube_two_dim_expr() {
+    let ctx = create_test_context();
+    let expr = make_member_expression(
+        "root_two_dim_min",
+        "many_to_one_view",
+        "MIN({many_to_one_view.root_dim} || {many_to_one_view.root_test_dim})",
+    );
+    let options = build_options_with_member_expression(&ctx, expr);
+
+    let sql = ctx
+        .build_sql_from_options(options)
+        .expect("same-cube two-dimension expression should plan after de-dup fix");
+    assert!(
+        sql.contains("test_dim"),
+        "generated SQL should reference both root dimensions: {sql}"
+    );
+}
+
+/// The single-cube guard must still reject a dimension-only expression that spans two DISTINCT
+/// cubes (`root_dim` on `many_to_one_root`, `child_dim` on `many_to_one_child`). That is a
+/// separate, unimplemented case — not the same-cube duplication the de-dup fix addresses — so the
+/// de-dup must not silently admit it.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_many_to_one_view_cross_cube_two_dim_expr_still_rejected() {
+    let ctx = create_test_context();
+    let expr = make_member_expression(
+        "cross_cube_min",
+        "many_to_one_view",
+        "MIN({many_to_one_view.root_dim} || {many_to_one_view.child_dim})",
+    );
+    let options = build_options_with_member_expression(&ctx, expr);
+
+    let err = ctx
+        .build_sql_from_options(options)
+        .expect_err("cross-cube dimension-only expression should still be rejected");
+    assert!(
+        err.to_string().contains("Expected single cube"),
+        "expected single-cube guard error, got: {err}"
+    );
+}
+
+/// When the owning cube *is* multiplied (here `many_to_one_child` is the "one" side of the
+/// `many_to_one` join, so its rows fan out across roots), a same-cube two-dimension expression must
+/// still route through the symmetric-aggregate (multiplied-subquery) path rather than aggregating
+/// over the duplicated rows. This locks in that the de-dup fix preserves fan-out correctness: the
+/// `MIN(...)` is evaluated inside the by-primary-key `keys` subquery, not the raw join.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_many_to_one_view_same_cube_two_dim_expr_on_multiplied_cube() {
+    let ctx = create_test_context();
+    let expr = make_member_expression(
+        "child_two_dim_min",
+        "many_to_one_view",
+        "MIN({many_to_one_view.child_dim} || {many_to_one_view.child_test_dim})",
+    );
+    let options = build_options_with_member_expression(&ctx, expr);
+
+    let sql = ctx
+        .build_sql_from_options(options)
+        .expect("same-cube two-dimension expression on a multiplied cube should plan");
+
+    assert!(
+        sql.contains("child_two_dim_min"),
+        "generated SQL should emit the expression: {sql}"
+    );
+    // Symmetric-aggregate dedup subquery for the multiplied child cube.
+    assert!(
+        sql.contains(r#"AS "keys""#),
+        "expected the multiplied-cube keys subquery (symmetric aggregate): {sql}"
+    );
+    // The expression itself aggregates over the keyed (deduplicated) child rows, confirming it was
+    // routed into the multiplied subquery rather than the raw fanned-out join.
+    assert!(
+        sql.contains("MIN(") && sql.contains("many_to_one_child_key_many_to_one_child"),
+        "expected MIN(...) evaluated inside the multiplied (keyed) subquery: {sql}"
+    );
+}
