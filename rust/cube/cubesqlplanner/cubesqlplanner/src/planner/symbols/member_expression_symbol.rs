@@ -182,9 +182,15 @@ impl MemberExpressionSymbol {
         if childs.iter().any(|s| !s.is_dimension()) {
             Ok(None)
         } else {
+            // De-duplicate cube names: an expression that references several dimensions of the
+            // *same* cube (e.g. `a + b` where both `a` and `b` belong to one cube) must resolve to
+            // a single cube here. Without the de-dup the caller's `cube_names.len() == 1` check
+            // sees `["cube", "cube"]` and wrongly rejects it with "Expected single cube".
+            // A genuinely multi-cube expression still yields `len() > 1` and stays rejected.
             let cube_names = childs
                 .into_iter()
                 .map(|child| child.cube_name())
+                .unique()
                 .collect_vec();
             Ok(Some(cube_names))
         }
