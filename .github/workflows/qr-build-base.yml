@@ -52,6 +52,23 @@ jobs:
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v3
 
+      # The repo's default .dockerignore excludes the rust/ source tree (the official
+      # image downloads a prebuilt native addon). This build compiles the native from
+      # source, so swap in a permissive ignore (ephemeral checkout only) that keeps
+      # rust/ + packages/ source while dropping node_modules / target / dist / .git.
+      - name: Prepare build context (include rust source)
+        run: |
+          cat > .dockerignore <<'IGNORE'
+          .git
+          **/node_modules
+          **/target
+          **/dist
+          **/coverage
+          packages/cubejs-backend-native/index.node
+          packages/cubejs-backend-native/native/index.node
+          packages/cubejs-server-core/playground
+          IGNORE
+
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
