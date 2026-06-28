@@ -77,6 +77,94 @@ impl WrapperRules {
                     "?input_data_source",
                 ),
             ),
+            // QueryRails: SQL push down for TWO-argument aggregate functions
+            // (CORR, COVAR_SAMP, COVAR_POP). The single-arg rules above only match
+            // `agg_fun_expr(?fun, vec![?expr], ..)` so a two-arg aggregate never
+            // matches and the query fails with "Can't detect Cube query" before the
+            // template lookup is ever reached. These rules mirror the single-arg
+            // push-down/pull-up exactly (same `transform_agg_fun_expr` template gate;
+            // the SQL generator already renders all args via args_concat), but match a
+            // two-element argument list. Additive — the validated single-arg path is
+            // untouched.
+            rewrite(
+                "wrapper-push-down-aggregate-function-2-args",
+                wrapper_pushdown_replacer(
+                    agg_fun_expr("?fun", vec!["?arg1", "?arg2"], "?distinct", "?within_group"),
+                    "?context",
+                ),
+                agg_fun_expr(
+                    "?fun",
+                    vec![
+                        wrapper_pushdown_replacer("?arg1", "?context"),
+                        wrapper_pushdown_replacer("?arg2", "?context"),
+                    ],
+                    "?distinct",
+                    wrapper_pushdown_replacer("?within_group", "?context"),
+                ),
+            ),
+            transforming_rewrite(
+                "wrapper-pull-up-aggregate-function-2-args",
+                agg_fun_expr(
+                    "?fun",
+                    vec![
+                        wrapper_pullup_replacer(
+                            "?arg1",
+                            wrapper_replacer_context(
+                                "?alias_to_cube",
+                                "?push_to_cube",
+                                "?in_projection",
+                                "?cube_members",
+                                "?grouped_subqueries",
+                                "?ungrouped_scan",
+                                "?input_data_source",
+                            ),
+                        ),
+                        wrapper_pullup_replacer(
+                            "?arg2",
+                            wrapper_replacer_context(
+                                "?alias_to_cube",
+                                "?push_to_cube",
+                                "?in_projection",
+                                "?cube_members",
+                                "?grouped_subqueries",
+                                "?ungrouped_scan",
+                                "?input_data_source",
+                            ),
+                        ),
+                    ],
+                    "?distinct",
+                    wrapper_pullup_replacer(
+                        "?within_group",
+                        wrapper_replacer_context(
+                            "?alias_to_cube",
+                            "?push_to_cube",
+                            "?in_projection",
+                            "?cube_members",
+                            "?grouped_subqueries",
+                            "?ungrouped_scan",
+                            "?input_data_source",
+                        ),
+                    ),
+                ),
+                wrapper_pullup_replacer(
+                    agg_fun_expr("?fun", vec!["?arg1", "?arg2"], "?distinct", "?within_group"),
+                    wrapper_replacer_context(
+                        "?alias_to_cube",
+                        "?push_to_cube",
+                        "?in_projection",
+                        "?cube_members",
+                        "?grouped_subqueries",
+                        "?ungrouped_scan",
+                        "?input_data_source",
+                    ),
+                ),
+                self.transform_agg_fun_expr(
+                    "?fun",
+                    "?distinct",
+                    "?within_group",
+                    "?input_data_source",
+                ),
+            ),
             rewrite(
                 "wrapper-push-down-aggregate-function-within-group",
                 wrapper_pushdown_replacer(agg_fun_expr_within_group("?left", "?right"), "?context"),

@@ -49,6 +49,46 @@ async fn test_simple_wrapper() {
 }
 
 #[tokio::test]
+async fn test_wrapper_two_arg_aggregate_push_down() {
+    if !Rewriter::sql_push_down_enabled() {
+        return;
+    }
+    init_testing_logger();
+
+    // QueryRails: two-argument aggregates (CORR, COVAR_SAMP, COVAR_POP) must reach the
+    // wrapper SQL push-down. The stock single-arg rules only match
+    // agg_fun_expr(?fun, vec![?expr], ..), so a two-arg aggregate never matched and the
+    // query failed with "Can't detect Cube query" before the template lookup was reached.
+    // The template key is the no-underscore Display name (Correlation -> CORRELATION,
+    // CovariancePop -> COVARIANCEPOP), injected here the way the base-map fix provides it.
+    for (sql_fn, fun_key, native) in [
+        ("CORR", "CORRELATION", "CORR"),
+        ("COVAR_POP", "COVARIANCEPOP", "COVAR_POP"),
+    ] {
+        let query_plan = convert_select_to_query_plan_customized(
+            format!(
+                "SELECT {sql_fn}(taxful_total_price, taxful_total_price) AS v FROM KibanaSampleDataEcommerce a"
+            ),
+            DatabaseProtocol::PostgreSQL,
+            vec![(
+                format!("functions/{fun_key}"),
+                format!("{native}({{{{ args_concat }}}})"),
+            )],
+        )
+        .await;
+
+        let logical_plan = query_plan.as_logical_plan();
+        let sql = logical_plan.find_cube_scan_wrapped_sql().wrapped_sql.sql;
+        assert!(
+            sql.contains(&format!("{native}(")),
+            "expected two-arg {sql_fn} to push down, got: {sql}"
+        );
+
+        let _physical_plan = query_plan.as_physical_plan().await.unwrap();
+    }
+}
+
+#[tokio::test]
 async fn test_wrapper_group_by_rollup() {
     if !Rewriter::sql_push_down_enabled() {
         return;
