@@ -194,6 +194,10 @@ export class PrestodbQuery extends BaseQuery {
     // APPROX_MEDIAN(expr) into, APPROXPERCENTILECONT(expr, 0.5).
     delete templates.functions.PERCENTILECONT;
     templates.functions.APPROXPERCENTILECONT = 'APPROX_PERCENTILE({{ args_concat }})';
+    // SQL function-template fix: Prestodb native forms / unsupported deletes
+    templates.functions.COT = '(1 / TAN({{ args_concat }}))';
+    templates.functions.CHARACTERLENGTH = 'LENGTH({{ args[0] }})';
+    delete templates.functions.OCTETLENGTH;
     templates.statements.select = '{% if ctes %} WITH \n' +
           '{{ ctes | join(\',\n\') }}\n' +
           '{% endif %}' +

@@ -58,6 +58,10 @@ export class FireboltQuery extends BaseQuery {
     templates.expressions.timestamp_literal = 'TIMESTAMPTZ \'{{ value }}\'';
     templates.tesseract.bool_param_cast = 'CAST({{ expr }} AS BOOLEAN)';
     delete templates.functions.WIDTH_BUCKET;
+    // SQL function-template fix: Firebolt unsupported deletes
+    delete templates.functions.CHARACTERLENGTH;
+    delete templates.functions.BITLENGTH;
+    delete templates.functions.STARTSWITH;
     return templates;
   }
 

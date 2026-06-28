@@ -24,4 +24,12 @@ export class VerticaQuery extends BaseQuery {
   public timeGroupedColumn(granularity, dimension) {
     return `TRUNC(${dimension}, '${GRANULARITY_TO_INTERVAL[granularity]}')`;
   }
+
+  public sqlTemplates() {
+    const templates = super.sqlTemplates();
+    // SQL function-template fix: Vertica unsupported deletes
+    delete templates.functions.PERCENTILECONT;
+    delete templates.functions.STARTSWITH;
+    return templates;
+  }
 }
