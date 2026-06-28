@@ -1,0 +1,82 @@
+# QueryRails: build the custom cube base image and publish it to GHCR.
+#
+# Builds packages/cubejs-docker/qr-base.Dockerfile (native addon compiled from this
+# fork's Rust source + the changed JS package dist, overlaid onto the official cube
+# image) on amd64 runners — no emulation — and pushes to GitHub Container Registry.
+# query_rails apps/cube/Dockerfile then FROMs the published image.
+name: QR Build Cube Base
+
+on:
+  workflow_dispatch:
+    inputs:
+      cube_version:
+        description: 'Base cube version (FROM cubejs/cube:<version>-jdk)'
+        type: string
+        default: v1.6.64
+  push:
+    branches:
+      - feat/2arg-agg-pushdown
+    paths:
+      - 'packages/cubejs-docker/qr-base.Dockerfile'
+      - '.github/workflows/qr-build-base.yml'
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: ghcr.io/simonedbarber/cube
+
+jobs:
+  build:
+    name: Build + push custom cube base
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v4
+
+      - name: Resolve cube version
+        id: ver
+        env:
+          IN: ${{ inputs.cube_version }}
+        run: echo "v=${IN:-v1.6.64}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: packages/cubejs-docker/qr-base.Dockerfile
+          platforms: linux/amd64
+          push: true
+          build-args: |
+            CUBE_VERSION=${{ steps.ver.outputs.v }}
+          tags: |
+            ${{ env.IMAGE }}:${{ steps.ver.outputs.v }}-${{ github.sha }}
+            ${{ env.IMAGE }}:${{ steps.ver.outputs.v }}-latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Summary
+        env:
+          IMG: ${{ env.IMAGE }}
+          VER: ${{ steps.ver.outputs.v }}
+          SHA: ${{ github.sha }}
+        run: |
+          {
+            echo "### Custom cube base published"
+            echo "- \`${IMG}:${VER}-${SHA}\`"
+            echo "- \`${IMG}:${VER}-latest\`"
+            echo ""
+            echo "Point query_rails apps/cube/Dockerfile FROM this image."
+          } >> "$GITHUB_STEP_SUMMARY"
