@@ -13,9 +13,15 @@ on:
         description: 'Base cube version (FROM cubejs/cube:<version>-jdk)'
         type: string
         default: v1.6.64
+  pull_request:
+    branches:
+      - master
+    paths:
+      - 'packages/cubejs-docker/qr-base.Dockerfile'
+      - '.github/workflows/qr-build-base.yml'
   push:
     branches:
-      - feat/2arg-agg-pushdown
+      - master
     paths:
       - 'packages/cubejs-docker/qr-base.Dockerfile'
       - '.github/workflows/qr-build-base.yml'
@@ -75,7 +81,8 @@ jobs:
           context: .
           file: packages/cubejs-docker/qr-base.Dockerfile
           platforms: linux/amd64
-          push: true
+          # Validate only on PRs; publish on merge to master / manual dispatch.
+          push: ${{ github.event_name != 'pull_request' }}
           build-args: |
             CUBE_VERSION=${{ steps.ver.outputs.v }}
           tags: |
