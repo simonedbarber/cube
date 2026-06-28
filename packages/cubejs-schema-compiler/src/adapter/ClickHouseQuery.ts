@@ -272,6 +272,13 @@ export class ClickHouseQuery extends BaseQuery {
     // https://github.com/ClickHouse/ClickHouse/issues/19351
     templates.expressions.timestamp_literal = 'parseDateTimeBestEffort(\'{{ value }}\')';
     delete templates.functions.PERCENTILECONT;
+    // SQL function-template fix: ClickHouse native forms / unsupported deletes
+    templates.functions.CORRELATION = 'corr({{ args_concat }})';
+    templates.functions.CHARACTERLENGTH = 'lengthUTF8({{ args[0] }})';
+    templates.functions.TRIM = 'trimBoth({{ args[0] }})';
+    templates.functions.STARTSWITH = 'startsWith({{ args[0] }}, {{ args[1] }})';
+    delete templates.functions.COT;
+    delete templates.functions.BITLENGTH;
     delete templates.expressions.like_escape;
     templates.quotes.identifiers = '`';
     templates.quotes.escape = '\\`';

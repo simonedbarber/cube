@@ -336,6 +336,10 @@ export class BigqueryQuery extends BaseQuery {
     delete templates.functions.TO_CHAR;
     delete templates.functions.PERCENTILECONT;
     delete templates.functions.WIDTH_BUCKET;
+    // SQL function-template fix: BigQuery unsupported deletes
+    delete templates.functions.DEGREES;
+    delete templates.functions.RADIANS;
+    delete templates.functions.BITLENGTH;
     templates.expressions.binary = '{% if op == \'%\' %}MOD({{ left }}, {{ right }}){% else %}({{ left }} {{ op }} {{ right }}){% endif %}';
     templates.expressions.interval = 'INTERVAL {{ interval }}';
     // BigQuery `/` on INT64 operands returns FLOAT64; DIV() is integer division

@@ -258,6 +258,10 @@ export class PinotQuery extends BaseQuery {
       '{% endfor %}' +
       ') AS dates';
     templates.quotes.identifiers = '"';
+    // SQL function-template fix: Pinot native forms / unsupported deletes
+    templates.functions.STARTSWITH = 'STARTSWITH({{ args_concat }})';
+    delete templates.functions.PERCENTILECONT;
+    delete templates.functions.CORRELATION;
     delete templates.types.time;
     delete templates.types.interval;
     delete templates.types.binary;

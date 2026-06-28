@@ -72,6 +72,24 @@ export class SqliteQuery extends BaseQuery {
     return `SELECT dates.f date_from, dates.t date_to FROM (${values}) AS dates`;
   }
 
+  public sqlTemplates() {
+    const templates = super.sqlTemplates();
+    // SQL function-template fix: Sqlite native forms / unsupported deletes
+    templates.functions.CHARACTERLENGTH = 'LENGTH({{ args[0] }})';
+    delete templates.functions.STDDEV;
+    delete templates.functions.STDDEVPOP;
+    delete templates.functions.VARIANCE;
+    delete templates.functions.VARIANCEPOP;
+    delete templates.functions.COVARIANCE;
+    delete templates.functions.COVARIANCEPOP;
+    delete templates.functions.CORRELATION;
+    delete templates.functions.COT;
+    delete templates.functions.BITLENGTH;
+    delete templates.functions.STARTSWITH;
+    delete templates.functions.PERCENTILECONT;
+    return templates;
+  }
+
   public nowTimestampSql() {
     // eslint-disable-next-line quotes
     return `strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`;

@@ -54,7 +54,6 @@ export class DruidQuery extends BaseQuery {
 
   public sqlTemplates() {
     const templates = super.sqlTemplates();
-
     // Druid doesn't support ILIKE, so case-insensitive matching is emulated with LOWER(...) LIKE CONCAT(...)
     templates.expressions.ilike = 'LOWER({{ expr }}) {% if negated %}NOT {% endif %}LIKE LOWER({{ pattern }})';
     // Timestamp constants arrive as ISO-8601 UTC strings ('2021-01-01T00:00:00.000Z');
@@ -69,7 +68,14 @@ export class DruidQuery extends BaseQuery {
     // defaults to UTC — assumes the connection does not override sqlTimeZone
     templates.functions.UTCTIMESTAMP = 'CURRENT_TIMESTAMP';
     delete templates.functions.WIDTH_BUCKET;
-
+    // SQL function-template fix: Druid unsupported deletes
+    delete templates.functions.COVARIANCE;
+    delete templates.functions.COVARIANCEPOP;
+    delete templates.functions.CORRELATION;
+    delete templates.functions.PERCENTILECONT;
+    delete templates.functions.BITLENGTH;
+    delete templates.functions.OCTETLENGTH;
+    delete templates.functions.STARTSWITH;
     return templates;
   }
 }

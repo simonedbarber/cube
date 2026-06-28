@@ -170,6 +170,10 @@ export class PrestodbQuery extends BaseQuery {
     templates.functions.TRUNC = 'TRUNCATE({{ args_concat }})';
     templates.functions.STRING_AGG = 'ARRAY_JOIN(ARRAY_AGG({% if distinct %}DISTINCT {% endif %}{{ args[0] }}), COALESCE({{ args[1] }}, \'\'))';
     delete templates.functions.PERCENTILECONT;
+    // SQL function-template fix: Prestodb native forms / unsupported deletes
+    templates.functions.COT = '(1 / TAN({{ args_concat }}))';
+    templates.functions.CHARACTERLENGTH = 'LENGTH({{ args[0] }})';
+    delete templates.functions.OCTETLENGTH;
     templates.statements.select = '{% if ctes %} WITH \n' +
           '{{ ctes | join(\',\n\') }}\n' +
           '{% endif %}' +

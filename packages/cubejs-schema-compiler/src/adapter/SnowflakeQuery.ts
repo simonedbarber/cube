@@ -116,6 +116,9 @@ export class SnowflakeQuery extends BaseQuery {
     templates.functions.STRING_AGG = 'LISTAGG({% if distinct %}DISTINCT {% endif %}{{ args_concat }})';
     // DATEADD is being rewritten to DATE_ADD
     templates.functions.DATE_ADD = 'DATEADD({{ date_part }}, {{ interval }}, {{ args[0] }})';
+    // SQL function-template fix: Snowflake native forms
+    templates.functions.LOG10 = 'LOG(10, {{ args[0] }})';
+    templates.functions.STARTSWITH = 'STARTSWITH({{ args[0] }}, {{ args[1] }})';
     templates.expressions.extract = 'EXTRACT({{ date_part }} FROM {{ expr }})';
     // Snowflake `/` is decimal division even for integer operands (output scale
     // is dividend scale + 6), while this template must keep PostgreSQL integer

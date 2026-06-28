@@ -113,6 +113,12 @@ export class HiveQuery extends BaseQuery {
   public sqlTemplates() {
     const templates = super.sqlTemplates();
     delete templates.functions.WIDTH_BUCKET;
+    // SQL function-template fix: Hive unsupported deletes
+    delete templates.functions.PERCENTILECONT;
+    delete templates.functions.ATAN2;
+    delete templates.functions.COT;
+    delete templates.functions.BITLENGTH;
+    delete templates.functions.STARTSWITH;
     return templates;
   }
 }

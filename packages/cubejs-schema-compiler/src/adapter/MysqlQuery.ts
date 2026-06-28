@@ -195,6 +195,11 @@ export class MysqlQuery extends BaseQuery {
     // PERCENTILE_CONT works but requires PARTITION BY
     delete templates.functions.PERCENTILECONT;
     delete templates.functions.WIDTH_BUCKET;
+    // SQL function-template fix: MySQL unsupported deletes
+    delete templates.functions.COVARIANCE;
+    delete templates.functions.COVARIANCEPOP;
+    delete templates.functions.CORRELATION;
+    delete templates.functions.STARTSWITH;
     templates.quotes.identifiers = '`';
     templates.quotes.escape = '\\`';
     // NOTE: this template contains a comma; two order expressions are being generated
