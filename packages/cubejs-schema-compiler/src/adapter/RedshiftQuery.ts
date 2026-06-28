@@ -100,6 +100,13 @@ export class RedshiftQuery extends PostgresQuery {
     delete templates.window_frame_types.range;
     delete templates.window_frame_types.groups;
     templates.types.binary = 'VARBINARY';
+    // SQL function-template fix: Redshift native forms / unsupported deletes
+    templates.functions.LOG10 = 'LOG(10, {{ args[0] }})';
+    delete templates.functions.COVARIANCE;
+    delete templates.functions.COVARIANCEPOP;
+    delete templates.functions.CORRELATION;
+    delete templates.functions.BITLENGTH;
+    delete templates.functions.STARTSWITH;
     return templates;
   }
 }

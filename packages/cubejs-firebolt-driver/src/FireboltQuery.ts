@@ -52,6 +52,10 @@ export class FireboltQuery extends BaseQuery {
   public sqlTemplates() {
     const templates = super.sqlTemplates();
     templates.tesseract.bool_param_cast = 'CAST({{ expr }} AS BOOLEAN)';
+    // SQL function-template fix: Firebolt unsupported deletes
+    delete templates.functions.CHARACTERLENGTH;
+    delete templates.functions.BITLENGTH;
+    delete templates.functions.STARTSWITH;
     return templates;
   }
 

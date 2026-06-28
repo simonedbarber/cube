@@ -4557,6 +4557,24 @@ export class BaseQuery {
         DATE: 'DATE({{ args_concat }})',
 
         PERCENTILECONT: 'PERCENTILE_CONT({{ args_concat }})',
+        // SQL function-template dead-key fix: cubesql/Tesseract compute the pushdown
+        // template lookup key as the UPPERCASE of the DataFusion CamelCase variant name
+        // with NO underscores (aggregate: AggregateFunction::to_string() used as-is;
+        // scalar: uppercased). The stats/log/string keys above were defined with
+        // SQL-spelling underscores (STDDEV_POP/VAR_*/COVAR_*/DLOG10) which the lookup
+        // never produces, so they were silently dropped from push-down. Add the real
+        // Display-name keys here; the old keys remain as inert aliases.
+        STDDEVPOP: 'STDDEV_POP({{ args_concat }})',
+        VARIANCE: 'VAR_SAMP({{ args_concat }})',
+        VARIANCEPOP: 'VAR_POP({{ args_concat }})',
+        COVARIANCE: 'COVAR_SAMP({{ args_concat }})',
+        COVARIANCEPOP: 'COVAR_POP({{ args_concat }})',
+        CORRELATION: 'CORR({{ args_concat }})',
+        LOG10: 'LOG10({{ args_concat }})',
+        TRIM: 'TRIM({{ args_concat }})',
+        BITLENGTH: 'BIT_LENGTH({{ args[0] }})',
+        OCTETLENGTH: 'OCTET_LENGTH({{ args[0] }})',
+        STARTSWITH: 'STARTS_WITH({{ args_concat }})',
       },
       statements: {
         select: '{% if ctes %} WITH {% if recursive %}RECURSIVE {% endif %}\n' +

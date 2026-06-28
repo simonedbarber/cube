@@ -51,4 +51,17 @@ export class DruidQuery extends BaseQuery {
   public nowTimestampSql(): string {
     return 'CURRENT_TIMESTAMP';
   }
+
+  public sqlTemplates() {
+    const templates = super.sqlTemplates();
+    // SQL function-template fix: Druid unsupported deletes
+    delete templates.functions.COVARIANCE;
+    delete templates.functions.COVARIANCEPOP;
+    delete templates.functions.CORRELATION;
+    delete templates.functions.PERCENTILECONT;
+    delete templates.functions.BITLENGTH;
+    delete templates.functions.OCTETLENGTH;
+    delete templates.functions.STARTSWITH;
+    return templates;
+  }
 }

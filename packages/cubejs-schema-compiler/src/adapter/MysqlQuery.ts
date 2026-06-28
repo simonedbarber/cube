@@ -188,6 +188,11 @@ export class MysqlQuery extends BaseQuery {
     templates.functions.STRING_AGG = 'GROUP_CONCAT({% if distinct %}DISTINCT {% endif %}{{ args[0] }} SEPARATOR {{ args[1] }})';
     // PERCENTILE_CONT works but requires PARTITION BY
     delete templates.functions.PERCENTILECONT;
+    // SQL function-template fix: MySQL unsupported deletes
+    delete templates.functions.COVARIANCE;
+    delete templates.functions.COVARIANCEPOP;
+    delete templates.functions.CORRELATION;
+    delete templates.functions.STARTSWITH;
     templates.quotes.identifiers = '`';
     templates.quotes.escape = '\\`';
     // NOTE: this template contains a comma; two order expressions are being generated

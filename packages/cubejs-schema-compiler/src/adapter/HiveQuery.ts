@@ -109,4 +109,15 @@ export class HiveQuery extends BaseQuery {
   public defaultRefreshKeyRenewalThreshold() {
     return 120;
   }
+
+  public sqlTemplates() {
+    const templates = super.sqlTemplates();
+    // SQL function-template fix: Hive unsupported deletes
+    delete templates.functions.PERCENTILECONT;
+    delete templates.functions.ATAN2;
+    delete templates.functions.COT;
+    delete templates.functions.BITLENGTH;
+    delete templates.functions.STARTSWITH;
+    return templates;
+  }
 }

@@ -113,6 +113,9 @@ export class SnowflakeQuery extends BaseQuery {
     templates.functions.CHARACTERLENGTH = 'LENGTH({{ args[0] }})';
     templates.functions.BTRIM = 'TRIM({{ args_concat }})';
     templates.functions.STRING_AGG = 'LISTAGG({% if distinct %}DISTINCT {% endif %}{{ args_concat }})';
+    // SQL function-template fix: Snowflake native forms
+    templates.functions.LOG10 = 'LOG(10, {{ args[0] }})';
+    templates.functions.STARTSWITH = 'STARTSWITH({{ args[0] }}, {{ args[1] }})';
     templates.expressions.extract = 'EXTRACT({{ date_part }} FROM {{ expr }})';
     // Snowflake can't EXTRACT(EPOCH FROM <interval>), so the epoch of a timestamp
     // difference (left - right) is rendered as fractional seconds between them.

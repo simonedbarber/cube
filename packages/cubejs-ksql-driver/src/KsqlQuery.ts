@@ -72,6 +72,19 @@ export class KsqlQuery extends BaseQuery {
     // ksqlDB does not support positional GROUP BY — group by the full
     // expressions instead of column ordinals.
     templates.statements.group_by_exprs = '{{ group_by | map(attribute=\'expr\') | join(\', \') }}';
+    // SQL function-template fix: ksqlDB native forms / unsupported deletes
+    templates.functions.CORRELATION = 'CORRELATION({{ args[0] }}, {{ args[1] }})';
+    templates.functions.LOG10 = 'LOG(10, {{ args[0] }})';
+    templates.functions.CHARACTERLENGTH = 'LEN({{ args[0] }})';
+    delete templates.functions.STDDEVPOP;
+    delete templates.functions.VARIANCE;
+    delete templates.functions.VARIANCEPOP;
+    delete templates.functions.COVARIANCE;
+    delete templates.functions.COVARIANCEPOP;
+    delete templates.functions.PERCENTILECONT;
+    delete templates.functions.BITLENGTH;
+    delete templates.functions.OCTETLENGTH;
+    delete templates.functions.STARTSWITH;
     return templates;
   }
 

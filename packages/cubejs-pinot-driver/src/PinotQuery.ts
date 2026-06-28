@@ -153,6 +153,10 @@ export class PinotQuery extends BaseQuery {
     // NOTE: this template contains a comma; two order expressions are being generated
     templates.expressions.sort = '{{ expr }} IS NULL {% if nulls_first %}DESC{% else %}ASC{% endif %}, {{ expr }} {% if asc %}ASC{% else %}DESC{% endif %}';
     templates.quotes.identifiers = '"';
+    // SQL function-template fix: Pinot native forms / unsupported deletes
+    templates.functions.STARTSWITH = 'STARTSWITH({{ args_concat }})';
+    delete templates.functions.PERCENTILECONT;
+    delete templates.functions.CORRELATION;
     delete templates.types.time;
     delete templates.types.interval;
     delete templates.types.binary;

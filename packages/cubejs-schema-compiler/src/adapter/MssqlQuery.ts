@@ -274,6 +274,19 @@ export class MssqlQuery extends BaseQuery {
     delete templates.functions.STRING_AGG;
     // PERCENTILE_CONT works but requires PARTITION BY
     delete templates.functions.PERCENTILECONT;
+    // SQL function-template fix: Mssql native forms / unsupported deletes
+    templates.functions.STDDEV = 'STDEV({{ args_concat }})';
+    templates.functions.STDDEVPOP = 'STDEVP({{ args_concat }})';
+    templates.functions.VARIANCE = 'VAR({{ args_concat }})';
+    templates.functions.VARIANCEPOP = 'VARP({{ args_concat }})';
+    templates.functions.ATAN2 = 'ATN2({{ args[0] }}, {{ args[1] }})';
+    templates.functions.CHARACTERLENGTH = 'LEN({{ args[0] }})';
+    delete templates.functions.COVARIANCE;
+    delete templates.functions.COVARIANCEPOP;
+    delete templates.functions.CORRELATION;
+    delete templates.functions.BITLENGTH;
+    delete templates.functions.OCTETLENGTH;
+    delete templates.functions.STARTSWITH;
     templates.expressions.like = '{{ expr }} {% if negated %}NOT {% endif %}LIKE {{ pattern }}{% if default_escape %} ESCAPE \'\\\'{% endif %}';
     delete templates.expressions.ilike;
     // MSSQL uses + for string concatenation instead of ||

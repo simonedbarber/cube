@@ -349,6 +349,10 @@ export class BigqueryQuery extends BaseQuery {
     templates.functions.CURRENTDATE = 'CURRENT_DATE';
     delete templates.functions.TO_CHAR;
     delete templates.functions.PERCENTILECONT;
+    // SQL function-template fix: BigQuery unsupported deletes
+    delete templates.functions.DEGREES;
+    delete templates.functions.RADIANS;
+    delete templates.functions.BITLENGTH;
     templates.expressions.binary = '{% if op == \'%\' %}MOD({{ left }}, {{ right }}){% else %}({{ left }} {{ op }} {{ right }}){% endif %}';
     templates.expressions.interval = 'INTERVAL {{ interval }}';
     templates.expressions.extract = 'EXTRACT({% if date_part == \'DOW\' %}DAYOFWEEK{% elif date_part == \'DOY\' %}DAYOFYEAR{% else %}{{ date_part }}{% endif %} FROM {{ expr }})';
