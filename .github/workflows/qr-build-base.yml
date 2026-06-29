@@ -1,9 +1,16 @@
-# QueryRails: build the custom cube base image and publish it to GHCR.
+# QueryRails: build the custom cube base once, then PROMOTE (re-tag) to :latest on
+# master — no rebuild on merge.
 #
-# Builds packages/cubejs-docker/qr-base.Dockerfile (native addon compiled from this
-# fork's Rust source + the changed JS package dist, overlaid onto the official cube
-# image) on amd64 runners — no emulation — and pushes to GitHub Container Registry.
-# query_rails apps/cube/Dockerfile then FROMs the published image.
+#   build job   — compiles qr-base.Dockerfile (native from Rust source + JS dist
+#                 overlaid on the official cube image) and pushes an IMMUTABLE
+#                 :<version>-<sha> tag. Runs on branch push / PR (validation) /
+#                 dispatch. NOT on master push.
+#   promote job — on push to master, re-tags the already-built :<version>-<sha>
+#                 image to the stable, version-independent :latest (+ :<version>)
+#                 via `docker buildx imagetools create`. No rebuild.
+#
+# query_rails apps/cube/Dockerfile pins `FROM ghcr.io/simonedbarber/cube:latest`,
+# which only moves when a built branch is merged/fast-forwarded to master.
 name: QR Build Cube Base
 
 on:
@@ -14,14 +21,14 @@ on:
         type: string
         default: v1.6.64
   pull_request:
-    branches:
-      - master
+    branches: [master]
     paths:
       - 'packages/cubejs-docker/qr-base.Dockerfile'
       - '.github/workflows/qr-build-base.yml'
   push:
     branches:
       - master
+      - feat/2arg-agg-pushdown
     paths:
       - 'packages/cubejs-docker/qr-base.Dockerfile'
       - '.github/workflows/qr-build-base.yml'
@@ -35,7 +42,10 @@ env:
 
 jobs:
   build:
-    name: Build + push custom cube base
+    # Build the immutable artifact (validate on PR/branch/dispatch). NOT on a master
+    # push — master only promotes the already-built image (see the promote job).
+    if: ${{ !(github.event_name == 'push' && github.ref == 'refs/heads/master') }}
+    name: Build + push artifact
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
@@ -58,10 +68,9 @@ jobs:
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v3
 
-      # The repo's default .dockerignore excludes the rust/ source tree (the official
-      # image downloads a prebuilt native addon). This build compiles the native from
-      # source, so swap in a permissive ignore (ephemeral checkout only) that keeps
-      # rust/ + packages/ source while dropping node_modules / target / dist / .git.
+      # The repo's default .dockerignore excludes the rust/ source (the official image
+      # downloads a prebuilt native). This build compiles from source, so swap in a
+      # permissive ignore (ephemeral checkout only).
       - name: Prepare build context (include rust source)
         run: |
           cat > .dockerignore <<'IGNORE'
@@ -75,55 +84,63 @@ jobs:
           packages/cubejs-server-core/playground
           IGNORE
 
-      # Tagging:
-      #   :latest            — stable, version-INDEPENDENT; published ONLY on master
-      #                        merges. Pin query_rails apps/cube/Dockerfile to this so
-      #                        the FROM never changes across cube version bumps.
-      #   :<version>         — newest build for that cube version (e.g. v1.6.64).
-      #   :<version>-<sha>   — immutable pin to one build.
-      - name: Compute image tags
-        id: tags
-        env:
-          IMG: ${{ env.IMAGE }}
-          VER: ${{ steps.ver.outputs.v }}
-          SHA: ${{ github.sha }}
-          IS_MASTER: ${{ github.ref == 'refs/heads/master' }}
-        run: |
-          {
-            echo "list<<TAGS"
-            echo "${IMG}:${VER}-${SHA}"
-            echo "${IMG}:${VER}"
-            [ "$IS_MASTER" = "true" ] && echo "${IMG}:latest"
-            echo "TAGS"
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Build and push
+      - name: Build + push immutable artifact
         uses: docker/build-push-action@v6
         with:
           context: .
           file: packages/cubejs-docker/qr-base.Dockerfile
           platforms: linux/amd64
-          # Validate only on PRs; publish on merge to master / manual dispatch.
+          # Validate only on PRs; push the immutable artifact on branch push / dispatch.
           push: ${{ github.event_name != 'pull_request' }}
           build-args: |
             CUBE_VERSION=${{ steps.ver.outputs.v }}
-          tags: ${{ steps.tags.outputs.list }}
+          tags: ${{ env.IMAGE }}:${{ steps.ver.outputs.v }}-${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Summary
+  promote:
+    # On merge / fast-forward to master: re-tag the already-built artifact to the
+    # stable :latest (+ :<version>). NO rebuild — pure registry manifest copy.
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
+    name: Promote to :latest (re-tag, no rebuild)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2 # need HEAD^2 to detect a merge commit's source
+
+      - name: Resolve cube version
+        id: ver
+        env:
+          IN: ${{ inputs.cube_version }}
+        run: echo "v=${IN:-v1.6.64}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Re-tag merged artifact as :latest
         env:
           IMG: ${{ env.IMAGE }}
           VER: ${{ steps.ver.outputs.v }}
           SHA: ${{ github.sha }}
-          IS_MASTER: ${{ github.ref == 'refs/heads/master' }}
-          PUSHED: ${{ github.event_name != 'pull_request' }}
         run: |
+          # The merged content was built on the branch as ${IMG}:${VER}-<branch-sha>.
+          # Fast-forward update → branch sha == ${SHA}. Merge commit → its 2nd parent.
+          SRC="${SHA}"
+          if git rev-parse -q --verify "HEAD^2" >/dev/null; then SRC="$(git rev-parse HEAD^2)"; fi
+          echo "Promoting ${IMG}:${VER}-${SRC} -> :latest + :${VER}"
+          docker buildx imagetools create \
+            -t "${IMG}:latest" \
+            -t "${IMG}:${VER}" \
+            "${IMG}:${VER}-${SRC}"
           {
-            if [ "$PUSHED" = "true" ]; then echo "### Custom cube base published"; else echo "### Custom cube base built (PR — not pushed)"; fi
-            echo "- \`${IMG}:${VER}-${SHA}\` (immutable pin)"
-            echo "- \`${IMG}:${VER}\` (version)"
-            [ "$IS_MASTER" = "true" ] && echo "- \`${IMG}:latest\` (stable — pin apps/cube/Dockerfile FROM here)"
-            echo ""
-            echo "query_rails apps/cube/Dockerfile: FROM ${IMG}:latest"
+            echo "### Promoted to :latest (no rebuild)"
+            echo "- source: \`${IMG}:${VER}-${SRC}\`"
+            echo "- \`${IMG}:latest\`, \`${IMG}:${VER}\`"
           } >> "$GITHUB_STEP_SUMMARY"
