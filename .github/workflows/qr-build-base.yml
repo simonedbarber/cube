@@ -75,6 +75,28 @@ jobs:
           packages/cubejs-server-core/playground
           IGNORE
 
+      # Tagging:
+      #   :latest            — stable, version-INDEPENDENT; published ONLY on master
+      #                        merges. Pin query_rails apps/cube/Dockerfile to this so
+      #                        the FROM never changes across cube version bumps.
+      #   :<version>         — newest build for that cube version (e.g. v1.6.64).
+      #   :<version>-<sha>   — immutable pin to one build.
+      - name: Compute image tags
+        id: tags
+        env:
+          IMG: ${{ env.IMAGE }}
+          VER: ${{ steps.ver.outputs.v }}
+          SHA: ${{ github.sha }}
+          IS_MASTER: ${{ github.ref == 'refs/heads/master' }}
+        run: |
+          {
+            echo "list<<TAGS"
+            echo "${IMG}:${VER}-${SHA}"
+            echo "${IMG}:${VER}"
+            [ "$IS_MASTER" = "true" ] && echo "${IMG}:latest"
+            echo "TAGS"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
@@ -85,9 +107,7 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           build-args: |
             CUBE_VERSION=${{ steps.ver.outputs.v }}
-          tags: |
-            ${{ env.IMAGE }}:${{ steps.ver.outputs.v }}-${{ github.sha }}
-            ${{ env.IMAGE }}:${{ steps.ver.outputs.v }}-latest
+          tags: ${{ steps.tags.outputs.list }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -96,11 +116,14 @@ jobs:
           IMG: ${{ env.IMAGE }}
           VER: ${{ steps.ver.outputs.v }}
           SHA: ${{ github.sha }}
+          IS_MASTER: ${{ github.ref == 'refs/heads/master' }}
+          PUSHED: ${{ github.event_name != 'pull_request' }}
         run: |
           {
-            echo "### Custom cube base published"
-            echo "- \`${IMG}:${VER}-${SHA}\`"
-            echo "- \`${IMG}:${VER}-latest\`"
+            if [ "$PUSHED" = "true" ]; then echo "### Custom cube base published"; else echo "### Custom cube base built (PR — not pushed)"; fi
+            echo "- \`${IMG}:${VER}-${SHA}\` (immutable pin)"
+            echo "- \`${IMG}:${VER}\` (version)"
+            [ "$IS_MASTER" = "true" ] && echo "- \`${IMG}:latest\` (stable — pin apps/cube/Dockerfile FROM here)"
             echo ""
-            echo "Point query_rails apps/cube/Dockerfile FROM this image."
+            echo "query_rails apps/cube/Dockerfile: FROM ${IMG}:latest"
           } >> "$GITHUB_STEP_SUMMARY"
