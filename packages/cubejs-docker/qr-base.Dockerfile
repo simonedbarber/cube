@@ -14,14 +14,14 @@
 # the fork repo root.
 #
 # Pin the FROM tag to the cube version this fork is based on.
-ARG CUBE_VERSION=v1.6.64
+ARG CUBE_VERSION=v1.7.4
 
 # ── Stage 1: build the native addon + changed JS dist from fork source ──────────
-FROM node:22.22.0-bookworm-slim AS builder
+FROM node:24.18.0-trixie-slim AS builder
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-       curl ca-certificates python3 python3.11 libpython3.11-dev gcc g++ make cmake openjdk-17-jdk-headless \
+       curl ca-certificates python3 python3.13 libpython3.13-dev gcc g++ make cmake openjdk-21-jdk-headless \
     && rm -rf /var/lib/apt/lists/*
 
 # Rust toolchain — the channel is pinned by rust/cubesql/rust-toolchain.toml (1.90.0),

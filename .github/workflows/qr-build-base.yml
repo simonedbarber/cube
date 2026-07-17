@@ -19,7 +19,7 @@ on:
       cube_version:
         description: 'Base cube version (FROM cubejs/cube:<version>-jdk)'
         type: string
-        default: v1.6.64
+        default: v1.7.4
   pull_request:
     branches: [master]
     paths:
@@ -56,7 +56,7 @@ jobs:
         id: ver
         env:
           IN: ${{ inputs.cube_version }}
-        run: echo "v=${IN:-v1.6.64}" >> "$GITHUB_OUTPUT"
+        run: echo "v=${IN:-v1.7.4}" >> "$GITHUB_OUTPUT"
 
       # Tag by the PR HEAD sha so the merge commit's 2nd parent matches on promote;
       # otherwise the pushed/dispatched commit sha.
@@ -123,7 +123,7 @@ jobs:
         id: ver
         env:
           IN: ${{ inputs.cube_version }}
-        run: echo "v=${IN:-v1.6.64}" >> "$GITHUB_OUTPUT"
+        run: echo "v=${IN:-v1.7.4}" >> "$GITHUB_OUTPUT"
 
       - name: Log in to GHCR
         uses: docker/login-action@v3
