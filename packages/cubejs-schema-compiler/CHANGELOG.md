@@ -3,6 +3,79 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## [1.7.16](https://github.com/cube-js/cube/compare/v1.7.15...v1.7.16) (2026-07-31)
+
+**Note:** Version bump only for package @cubejs-backend/schema-compiler
+
+## [1.7.15](https://github.com/cube-js/cube/compare/v1.7.14...v1.7.15) (2026-07-30)
+
+### Bug Fixes
+
+- **tesseract:** project the requested grain into rolling-window CTEs ([#11400](https://github.com/cube-js/cube/issues/11400)) ([80d1159](https://github.com/cube-js/cube/commit/80d1159fd0d255f8b3b8799275bc921fabeaad5a)), closes [#11410](https://github.com/cube-js/cube/issues/11410) [#11413](https://github.com/cube-js/cube/issues/11413)
+
+## [1.7.14](https://github.com/cube-js/cube/compare/v1.7.13...v1.7.14) (2026-07-29)
+
+### Bug Fixes
+
+- **tesseract:** allocate a param per placeholder on `?` dialects ([#11380](https://github.com/cube-js/cube/issues/11380)) ([4283244](https://github.com/cube-js/cube/commit/4283244ae1b922d387d9ded51483db7bb00b4275))
+
+## [1.7.13](https://github.com/cube-js/cube/compare/v1.7.12...v1.7.13) (2026-07-28)
+
+**Note:** Version bump only for package @cubejs-backend/schema-compiler
+
+## [1.7.12](https://github.com/cube-js/cube/compare/v1.7.11...v1.7.12) (2026-07-27)
+
+### Bug Fixes
+
+- **trino/prestodb-driver:** Сorrect SQL parameter escaping ([#11345](https://github.com/cube-js/cube/issues/11345)) ([463e602](https://github.com/cube-js/cube/commit/463e60284a5a4073eb7b7d2f11c4b315deaa2d94))
+
+## [1.7.11](https://github.com/cube-js/cube/compare/v1.7.8...v1.7.11) (2026-07-26)
+
+### Bug Fixes
+
+- **cubesql:** Keep PostgreSQL integer division semantics in pushdown SQL ([#11319](https://github.com/cube-js/cube/issues/11319)) ([ae248c4](https://github.com/cube-js/cube/commit/ae248c446651790483212dd68176a9b78fe7844b))
+- **schema-compiler:** Allow dimension-only measure expressions over multiple cubes ([#11330](https://github.com/cube-js/cube/issues/11330)) ([69e8728](https://github.com/cube-js/cube/commit/69e8728d13caa247fad6612dc9b05ca722229b98))
+
+### Features
+
+- **cubesql:** Support parsing date-only timestamp strings ([#11316](https://github.com/cube-js/cube/issues/11316)) ([c9bf776](https://github.com/cube-js/cube/commit/c9bf77684d743344134a7af0c3f42e52e74c54b1))
+- **tesseract:** pre-agg matching without stored calc-group dims; collapse trivial pass-through subqueries; e2e specs for cross-cube rolling measures over rollups ([#11346](https://github.com/cube-js/cube/issues/11346)) ([0730e31](https://github.com/cube-js/cube/commit/0730e31df3cb9e0f7ac0a2f73ccb41d3b20013e5))
+
+## [1.7.10](https://github.com/cube-js/cube/compare/v1.7.9...v1.7.10) (2026-07-23)
+
+**Note:** Version bump only for package @cubejs-backend/schema-compiler
+
+## [1.7.9](https://github.com/cube-js/cube/compare/v1.7.8...v1.7.9) (2026-07-23)
+
+### Bug Fixes
+
+- **cubesql:** Keep PostgreSQL integer division semantics in pushdown SQL ([#11319](https://github.com/cube-js/cube/issues/11319)) ([ae248c4](https://github.com/cube-js/cube/commit/ae248c446651790483212dd68176a9b78fe7844b))
+- **schema-compiler:** Allow dimension-only measure expressions over multiple cubes ([#11330](https://github.com/cube-js/cube/issues/11330)) ([69e8728](https://github.com/cube-js/cube/commit/69e8728d13caa247fad6612dc9b05ca722229b98))
+
+### Features
+
+- **cubesql:** Support parsing date-only timestamp strings ([#11316](https://github.com/cube-js/cube/issues/11316)) ([c9bf776](https://github.com/cube-js/cube/commit/c9bf77684d743344134a7af0c3f42e52e74c54b1))
+
+## [1.7.8](https://github.com/cube-js/cube/compare/v1.7.7...v1.7.8) (2026-07-22)
+
+**Note:** Version bump only for package @cubejs-backend/schema-compiler
+
+## [1.7.7](https://github.com/cube-js/cube/compare/v1.7.6...v1.7.7) (2026-07-21)
+
+**Note:** Version bump only for package @cubejs-backend/schema-compiler
+
+## [1.7.6](https://github.com/cube-js/cube/compare/v1.7.5...v1.7.6) (2026-07-21)
+
+**Note:** Version bump only for package @cubejs-backend/schema-compiler
+
+## [1.7.5](https://github.com/cube-js/cube/compare/v1.7.4...v1.7.5) (2026-07-21)
+
+### Bug Fixes
+
+- **schema-compiler:** do not stamp default target on links meta ([#11294](https://github.com/cube-js/cube/issues/11294)) ([c7db3fc](https://github.com/cube-js/cube/commit/c7db3fc8874075c87e4cae33d75a18411cbe420e))
+- **schema-compiler:** resolve view extends order dependency ([#11297](https://github.com/cube-js/cube/issues/11297)) ([d6363c4](https://github.com/cube-js/cube/commit/d6363c4a3657f92c79c2c7fc7b32cf93257cb808)), closes [#11260](https://github.com/cube-js/cube/issues/11260) [#11260](https://github.com/cube-js/cube/issues/11260)
+- **schema-compiler:** Throw UserError for unknown granularity so API returns 400, thanks @BrianSigafoos-SQ ([#11288](https://github.com/cube-js/cube/issues/11288)) ([e8843dc](https://github.com/cube-js/cube/commit/e8843dc318391fcc05dcac7a3c494e2dbf080c25))
+
 ## [1.7.4](https://github.com/cube-js/cube/compare/v1.7.3...v1.7.4) (2026-07-17)
 
 **Note:** Version bump only for package @cubejs-backend/schema-compiler

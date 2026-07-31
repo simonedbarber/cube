@@ -3,6 +3,70 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## [1.7.16](https://github.com/cube-js/cube/compare/v1.7.15...v1.7.16) (2026-07-31)
+
+**Note:** Version bump only for package @cubejs-backend/native
+
+## [1.7.15](https://github.com/cube-js/cube/compare/v1.7.14...v1.7.15) (2026-07-30)
+
+**Note:** Version bump only for package @cubejs-backend/native
+
+## [1.7.14](https://github.com/cube-js/cube/compare/v1.7.13...v1.7.14) (2026-07-29)
+
+### Bug Fixes
+
+- **tesseract:** allocate a param per placeholder on `?` dialects ([#11380](https://github.com/cube-js/cube/issues/11380)) ([4283244](https://github.com/cube-js/cube/commit/4283244ae1b922d387d9ded51483db7bb00b4275))
+
+## [1.7.13](https://github.com/cube-js/cube/compare/v1.7.12...v1.7.13) (2026-07-28)
+
+### Bug Fixes
+
+- **cubesql:** Support `GROUP BY ()` empty grouping set ([#11331](https://github.com/cube-js/cube/issues/11331)) ([92cc127](https://github.com/cube-js/cube/commit/92cc127b10d1583d6bf60645947676c227567ef0))
+
+## [1.7.12](https://github.com/cube-js/cube/compare/v1.7.11...v1.7.12) (2026-07-27)
+
+**Note:** Version bump only for package @cubejs-backend/native
+
+## [1.7.11](https://github.com/cube-js/cube/compare/v1.7.8...v1.7.11) (2026-07-26)
+
+### Bug Fixes
+
+- **native:** Jinja - forward kwargs on sync Python function/method calls ([#11325](https://github.com/cube-js/cube/issues/11325)) ([fd038e4](https://github.com/cube-js/cube/commit/fd038e452de3128fc4916bae67b7f2c8cd41afd3))
+
+### Features
+
+- **cubesql:** Support parsing date-only timestamp strings ([#11316](https://github.com/cube-js/cube/issues/11316)) ([c9bf776](https://github.com/cube-js/cube/commit/c9bf77684d743344134a7af0c3f42e52e74c54b1))
+
+## [1.7.10](https://github.com/cube-js/cube/compare/v1.7.9...v1.7.10) (2026-07-23)
+
+**Note:** Version bump only for package @cubejs-backend/native
+
+## [1.7.9](https://github.com/cube-js/cube/compare/v1.7.8...v1.7.9) (2026-07-23)
+
+### Features
+
+- **cubesql:** Support parsing date-only timestamp strings ([#11316](https://github.com/cube-js/cube/issues/11316)) ([c9bf776](https://github.com/cube-js/cube/commit/c9bf77684d743344134a7af0c3f42e52e74c54b1))
+
+## [1.7.8](https://github.com/cube-js/cube/compare/v1.7.7...v1.7.8) (2026-07-22)
+
+### Bug Fixes
+
+- **cubesql:** Support type coercion in multi-branch `UNION ALL` ([#11284](https://github.com/cube-js/cube/issues/11284)) ([d216ebc](https://github.com/cube-js/cube/commit/d216ebc59ef28e35299cd953649ecea7a35d300e))
+
+## [1.7.7](https://github.com/cube-js/cube/compare/v1.7.6...v1.7.7) (2026-07-21)
+
+**Note:** Version bump only for package @cubejs-backend/native
+
+## [1.7.6](https://github.com/cube-js/cube/compare/v1.7.5...v1.7.6) (2026-07-21)
+
+**Note:** Version bump only for package @cubejs-backend/native
+
+## [1.7.5](https://github.com/cube-js/cube/compare/v1.7.4...v1.7.5) (2026-07-21)
+
+### Features
+
+- add lastRefreshTime to Load Request Success telemetry events ([#11283](https://github.com/cube-js/cube/issues/11283)) ([802758c](https://github.com/cube-js/cube/commit/802758cb974d787fe5ff0e3f2297bf51b0710694))
+
 ## [1.7.4](https://github.com/cube-js/cube/compare/v1.7.3...v1.7.4) (2026-07-17)
 
 ### Bug Fixes

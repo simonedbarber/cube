@@ -3,6 +3,54 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## [1.7.16](https://github.com/cube-js/cube/compare/v1.7.15...v1.7.16) (2026-07-31)
+
+**Note:** Version bump only for package @cubejs-backend/cloud
+
+## [1.7.15](https://github.com/cube-js/cube/compare/v1.7.14...v1.7.15) (2026-07-30)
+
+**Note:** Version bump only for package @cubejs-backend/cloud
+
+## [1.7.14](https://github.com/cube-js/cube/compare/v1.7.13...v1.7.14) (2026-07-29)
+
+**Note:** Version bump only for package @cubejs-backend/cloud
+
+## [1.7.13](https://github.com/cube-js/cube/compare/v1.7.12...v1.7.13) (2026-07-28)
+
+**Note:** Version bump only for package @cubejs-backend/cloud
+
+## [1.7.12](https://github.com/cube-js/cube/compare/v1.7.11...v1.7.12) (2026-07-27)
+
+**Note:** Version bump only for package @cubejs-backend/cloud
+
+## [1.7.11](https://github.com/cube-js/cube/compare/v1.7.8...v1.7.11) (2026-07-26)
+
+**Note:** Version bump only for package @cubejs-backend/cloud
+
+## [1.7.10](https://github.com/cube-js/cube/compare/v1.7.9...v1.7.10) (2026-07-23)
+
+**Note:** Version bump only for package @cubejs-backend/cloud
+
+## [1.7.9](https://github.com/cube-js/cube/compare/v1.7.8...v1.7.9) (2026-07-23)
+
+**Note:** Version bump only for package @cubejs-backend/cloud
+
+## [1.7.8](https://github.com/cube-js/cube/compare/v1.7.7...v1.7.8) (2026-07-22)
+
+**Note:** Version bump only for package @cubejs-backend/cloud
+
+## [1.7.7](https://github.com/cube-js/cube/compare/v1.7.6...v1.7.7) (2026-07-21)
+
+**Note:** Version bump only for package @cubejs-backend/cloud
+
+## [1.7.6](https://github.com/cube-js/cube/compare/v1.7.5...v1.7.6) (2026-07-21)
+
+**Note:** Version bump only for package @cubejs-backend/cloud
+
+## [1.7.5](https://github.com/cube-js/cube/compare/v1.7.4...v1.7.5) (2026-07-21)
+
+**Note:** Version bump only for package @cubejs-backend/cloud
+
 ## [1.7.4](https://github.com/cube-js/cube/compare/v1.7.3...v1.7.4) (2026-07-17)
 
 **Note:** Version bump only for package @cubejs-backend/cloud

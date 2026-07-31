@@ -3,6 +3,60 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## [1.7.16](https://github.com/cube-js/cube/compare/v1.7.15...v1.7.16) (2026-07-31)
+
+**Note:** Version bump only for package @cubejs-backend/api-gateway
+
+## [1.7.15](https://github.com/cube-js/cube/compare/v1.7.14...v1.7.15) (2026-07-30)
+
+**Note:** Version bump only for package @cubejs-backend/api-gateway
+
+## [1.7.14](https://github.com/cube-js/cube/compare/v1.7.13...v1.7.14) (2026-07-29)
+
+### Features
+
+- **cubejs-client-core:** add `onlyViews` option to `meta()` ([#11391](https://github.com/cube-js/cube/issues/11391)) ([ef119be](https://github.com/cube-js/cube/commit/ef119bee4c602c4bba46e716d19251cd4451d362)), closes [#10809](https://github.com/cube-js/cube/issues/10809)
+
+## [1.7.13](https://github.com/cube-js/cube/compare/v1.7.12...v1.7.13) (2026-07-28)
+
+**Note:** Version bump only for package @cubejs-backend/api-gateway
+
+## [1.7.12](https://github.com/cube-js/cube/compare/v1.7.11...v1.7.12) (2026-07-27)
+
+**Note:** Version bump only for package @cubejs-backend/api-gateway
+
+## [1.7.11](https://github.com/cube-js/cube/compare/v1.7.8...v1.7.11) (2026-07-26)
+
+### Bug Fixes
+
+- **api-gateway:** pass job data source when checking pre-agg queue status ([#11321](https://github.com/cube-js/cube/issues/11321)) ([9f13a7f](https://github.com/cube-js/cube/commit/9f13a7ff8fd0ab77dac9925fc37bd13ea84c4f22)), closes [#11313](https://github.com/cube-js/cube/issues/11313) [#11313](https://github.com/cube-js/cube/issues/11313) [#11313](https://github.com/cube-js/cube/issues/11313)
+
+## [1.7.10](https://github.com/cube-js/cube/compare/v1.7.9...v1.7.10) (2026-07-23)
+
+**Note:** Version bump only for package @cubejs-backend/api-gateway
+
+## [1.7.9](https://github.com/cube-js/cube/compare/v1.7.8...v1.7.9) (2026-07-23)
+
+**Note:** Version bump only for package @cubejs-backend/api-gateway
+
+## [1.7.8](https://github.com/cube-js/cube/compare/v1.7.7...v1.7.8) (2026-07-22)
+
+**Note:** Version bump only for package @cubejs-backend/api-gateway
+
+## [1.7.7](https://github.com/cube-js/cube/compare/v1.7.6...v1.7.7) (2026-07-21)
+
+**Note:** Version bump only for package @cubejs-backend/api-gateway
+
+## [1.7.6](https://github.com/cube-js/cube/compare/v1.7.5...v1.7.6) (2026-07-21)
+
+**Note:** Version bump only for package @cubejs-backend/api-gateway
+
+## [1.7.5](https://github.com/cube-js/cube/compare/v1.7.4...v1.7.5) (2026-07-21)
+
+### Features
+
+- add lastRefreshTime to Load Request Success telemetry events ([#11283](https://github.com/cube-js/cube/issues/11283)) ([802758c](https://github.com/cube-js/cube/commit/802758cb974d787fe5ff0e3f2297bf51b0710694))
+
 ## [1.7.4](https://github.com/cube-js/cube/compare/v1.7.3...v1.7.4) (2026-07-17)
 
 **Note:** Version bump only for package @cubejs-backend/api-gateway

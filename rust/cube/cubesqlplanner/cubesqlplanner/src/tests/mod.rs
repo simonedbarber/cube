@@ -10,8 +10,10 @@ mod join_hints_collector;
 mod measure_symbol;
 mod member_expressions_on_views;
 mod no_query_tools_leak;
+mod positional_params;
 mod string_measures;
 mod subquery_dimensions;
+mod time_dimension_symbol;
 mod utils;
 mod view_default_filters;
 

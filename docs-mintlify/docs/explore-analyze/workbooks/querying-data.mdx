@@ -24,6 +24,14 @@ A data model author can change the default for a semantic view with the
 views that are expensive to query. You can still toggle auto-run back on at
 any time.
 
+An admin can also turn auto-run off by default for every tab in the
+deployment, from **Model Configuration**. Per-view and per-tab settings still
+take precedence over this deployment-wide default. See
+[Auto-run][ref-configuration-auto-run] in the Model Configuration reference.
+
+When a cell's value is too long for its column, it is truncated with an
+ellipsis. Hover over a truncated cell to see its full value in a tooltip.
+
 ## Filtering
 
 Dimensions and measures can be added as filters to focus on specific rows of data.
@@ -193,6 +201,44 @@ happens, the column header indicator warns you.
 
 </Info>
 
+## Period-over-period comparison
+
+You can compare any measure against a prior period — for example, month over
+month or year over year. Hover over the header of a measure column in the
+results table, expand the context menu, and pick a comparison under
+**Compare periods**. The same menu on a time dimension column header applies
+the comparison to all measures at once.
+
+<Frame>
+  <img src="https://ucarecdn.com/b54e66aa-4435-466e-945e-7df4100774ee/68dc2dc0-light.png" alt="Results table with period comparison columns" />
+</Frame>
+
+The menu is available when the query includes a time dimension with a year,
+quarter, month, week, or day granularity. The presets depend on that
+granularity — a month grain offers **Previous period**, **Same period
+previous quarter**, and **Same period previous year** — so the comparison
+period always aligns exactly with the current buckets. A measure can have
+several comparisons active at once, such as month over month and year over
+year side by side.
+
+Each comparison adds derived columns next to the measure. Choose which ones
+to show under **Comparison columns** in the same menu:
+
+- **Previous value** (on by default) — the measure's value in the comparison
+  period
+- **Difference** — the absolute change from the comparison period
+- **% change** — the relative change from the comparison period
+
+To remove a single derived column, use **Remove Column** in its header menu;
+removing the last one turns the comparison off. You can also untoggle the
+preset under **Compare periods**.
+
+Comparisons are saved with the report and apply everywhere it appears —
+charts, totals, and [dashboards][ref-dashboards]. Cube fetches the
+comparison values with a companion query whose date filters are shifted back
+by the comparison offset; you can [inspect it](#inspecting-queries) to check
+the math.
+
 ## Inspecting queries
 
 Every query in the Semantic Query tab can be inspected as code. Open the SQL panel via the **SQL** button in the top-right toolbar to see the query that the workbook generates, switch between representations, and copy it for use elsewhere.
@@ -212,6 +258,13 @@ The **Semantic SQL** tab also has a dropdown for viewing the same query in the f
 - **Semantic GraphQL** — the [GraphQL API][ref-graphql-api] query format
 
 These views are convenient when you want to take a query you've built interactively in a workbook and reuse it directly through one of the Core Data APIs from your own application.
+
+## Result freshness and provenance
+
+Two indicators next to each result describe the data behind it.
+
+- **Freshness** — a leaf icon shows how recently the underlying data was refreshed. Hover over it to see the last refresh time (for example, "Refreshed 5 minutes ago"); its color shifts as the data ages, so you can tell fresh from stale results at a glance. If the refresh time can't be determined, the leaf turns gray with a "Data age unknown" label. When you have access to [Query History](/admin/monitoring/query-history), clicking the leaf opens the underlying request for that result.
+- **Pre-aggregation** — for those same users, a lightning-bolt icon appears next to the leaf with a "Served from a pre-aggregation" label whenever the result was served from a [pre-aggregation](/docs/pre-aggregations). If no icon is shown, the query ran directly against your data source.
 
 ## Editing Semantic SQL by hand
 
@@ -312,4 +365,5 @@ behaves as intended.
 [ref-table-chart]: /docs/explore-analyze/charts/chart-types/table
 [ref-calculated-fields]: /docs/explore-analyze/workbooks/calculated-fields
 [ref-auto-run]: /reference/data-modeling/view#auto_run
+[ref-configuration-auto-run]: /docs/data-modeling/configuration#auto-run
 

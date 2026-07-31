@@ -13,7 +13,7 @@ env:
 jobs:
   npm:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 60
     permissions:
       contents: write
       id-token: write  # Required for OIDC trusted publishing
@@ -64,9 +64,15 @@ jobs:
         env:
           NODE_OPTIONS: --max_old_space_size=4096
       - name: NPM publish
-        run: ./node_modules/.bin/lerna publish from-package --yes
+        uses: nick-fields/retry@v3
         env:
-          NPM_CONFIG_PROVENANCE: true
+          NPM_CONFIG_PROVENANCE: false
+        with:
+          max_attempts: 5
+          retry_on: error
+          retry_wait_seconds: 30
+          timeout_minutes: 15
+          command: ./node_modules/.bin/lerna publish from-package --yes
 
   native_linux:
     # Please use minimal possible version of ubuntu, because it produces constraint on glibc
@@ -767,6 +773,70 @@ jobs:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file: cubestore-archive/cubestored-${{ matrix.target }}.tar.gz
           asset_name: cubestored-${{ matrix.target }}.tar.gz
+          tag: ${{ github.ref }}
+          overwrite: true
+
+  cube-cli:
+    name: Cube CLI ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux — fully static single binaries (musl + rustls, no OpenSSL).
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-musl
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+          # macOS — Intel and Apple Silicon.
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+          - os: macos-14
+            target: aarch64-apple-darwin
+          # Windows.
+          - os: windows-2022
+            target: x86_64-pc-windows-msvc
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install musl tools
+        if: endsWith(matrix.target, '-musl')
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - name: Setup Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          target: ${{ matrix.target }}
+          cache-workspaces: rust/cube-cli
+      # The CLI version comes from lerna.json at build time (see
+      # rust/cube-cli/build.rs); just guard against tag/lerna drift.
+      - name: Check release version matches lerna.json
+        shell: bash
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          l=$(jq -r .version lerna.json)
+          if [ "$v" != "$l" ]; then
+            echo "tag version $v does not match lerna.json version $l" >&2
+            exit 1
+          fi
+      - name: Build
+        working-directory: rust/cube-cli
+        run: cargo build --release --target ${{ matrix.target }}
+      - name: Create archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          bindir="rust/cube-cli/target/${{ matrix.target }}/release"
+          bin=cube
+          [ "${{ runner.os }}" = "Windows" ] && bin=cube.exe
+          tar -C "$bindir" -czf "cube-${{ matrix.target }}.tar.gz" "$bin"
+      - name: Upload Binary to Release
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: cube-${{ matrix.target }}.tar.gz
+          asset_name: cube-${{ matrix.target }}.tar.gz
           tag: ${{ github.ref }}
           overwrite: true
 

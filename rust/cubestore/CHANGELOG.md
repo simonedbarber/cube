@@ -3,6 +3,67 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## [1.7.16](https://github.com/cube-js/cube/compare/v1.7.15...v1.7.16) (2026-07-31)
+
+**Note:** Version bump only for package @cubejs-backend/cubestore
+
+## [1.7.15](https://github.com/cube-js/cube/compare/v1.7.14...v1.7.15) (2026-07-30)
+
+### Bug Fixes
+
+- **cubestore:** cast aggregating index aggregation results back to the declared column types ([#11413](https://github.com/cube-js/cube/issues/11413)) ([26c4801](https://github.com/cube-js/cube/commit/26c4801629ef4851e3474e5d0a4ed4cf76c3d4d0))
+- **cubestore:** keep the projection schema when rewriting a rolling window ([#11410](https://github.com/cube-js/cube/issues/11410)) ([1bf2dd8](https://github.com/cube-js/cube/commit/1bf2dd848e9147afa94c19235bd0026899740609))
+
+## [1.7.14](https://github.com/cube-js/cube/compare/v1.7.13...v1.7.14) (2026-07-29)
+
+**Note:** Version bump only for package @cubejs-backend/cubestore
+
+## [1.7.13](https://github.com/cube-js/cube/compare/v1.7.12...v1.7.13) (2026-07-28)
+
+**Note:** Version bump only for package @cubejs-backend/cubestore
+
+## [1.7.12](https://github.com/cube-js/cube/compare/v1.7.11...v1.7.12) (2026-07-27)
+
+**Note:** Version bump only for package @cubejs-backend/cubestore
+
+## [1.7.11](https://github.com/cube-js/cube/compare/v1.7.8...v1.7.11) (2026-07-26)
+
+**Note:** Version bump only for package @cubejs-backend/cubestore
+
+## [1.7.10](https://github.com/cube-js/cube/compare/v1.7.9...v1.7.10) (2026-07-23)
+
+**Note:** Version bump only for package @cubejs-backend/cubestore
+
+## [1.7.9](https://github.com/cube-js/cube/compare/v1.7.8...v1.7.9) (2026-07-23)
+
+**Note:** Version bump only for package @cubejs-backend/cubestore
+
+## [1.7.8](https://github.com/cube-js/cube/compare/v1.7.7...v1.7.8) (2026-07-22)
+
+### Features
+
+- **cubestore:** Support SYS METASTORE/CACHESTORE TRUNCATE ([#11300](https://github.com/cube-js/cube/issues/11300)) ([78bb27f](https://github.com/cube-js/cube/commit/78bb27f3d8fd7dd36edd5a46e28d9f04444040a6))
+
+## [1.7.7](https://github.com/cube-js/cube/compare/v1.7.6...v1.7.7) (2026-07-21)
+
+**Note:** Version bump only for package @cubejs-backend/cubestore
+
+## [1.7.6](https://github.com/cube-js/cube/compare/v1.7.5...v1.7.6) (2026-07-21)
+
+**Note:** Version bump only for package @cubejs-backend/cubestore
+
+## [1.7.5](https://github.com/cube-js/cube/compare/v1.7.4...v1.7.5) (2026-07-21)
+
+### Bug Fixes
+
+- **cubestore:** do not log rate limit errors as errors in HTTP module ([#11293](https://github.com/cube-js/cube/issues/11293)) ([a23d5d6](https://github.com/cube-js/cube/commit/a23d5d663c47bd5918f1dfa62f4aa20cba8eef58))
+- **cubestore:** raise Kafka watermark fetch timeout to stop constant broker disconnects ([#11290](https://github.com/cube-js/cube/issues/11290)) ([d1d0846](https://github.com/cube-js/cube/commit/d1d0846500141c2bfc7a755a476935572cdad45c))
+- **cubestore:** send x-amz-server-side-encryption only on object-storing S3 requests ([#11278](https://github.com/cube-js/cube/issues/11278)) ([3013a46](https://github.com/cube-js/cube/commit/3013a46f3cb96b50d2f8b95f6e236b889692aa63)), closes [cube-js/rust-s3#2](https://github.com/cube-js/rust-s3/issues/2) [cube-js/rust-s3#2](https://github.com/cube-js/rust-s3/issues/2)
+
+### Features
+
+- **cubestore:** Introduce SYS CACHESTORE WIPE ([#11298](https://github.com/cube-js/cube/issues/11298)) ([9c91f60](https://github.com/cube-js/cube/commit/9c91f60a52c54a4324a4f618721459a6234597cc))
+
 ## [1.7.4](https://github.com/cube-js/cube/compare/v1.7.3...v1.7.4) (2026-07-17)
 
 ### Features

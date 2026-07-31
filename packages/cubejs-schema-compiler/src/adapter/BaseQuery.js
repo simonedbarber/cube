@@ -2188,8 +2188,17 @@ export class BaseQuery {
       case 1:
         [cubeNameToAttach] = cubeNamesForMeasure;
         break;
-      default:
-        throw new Error(`Expected single cube for dimension-only measure ${measureName}, got ${cubeNamesForMeasure}`);
+      default: {
+        if (cubeNamesForMeasure.some(cubeName => this.multipliedJoinRowResult(cubeName))) {
+          throw new Error(`Dimension-only measure ${measureName} references cubes (${cubeNamesForMeasure}) that lead to row multiplication. Please rewrite it using sub query.`);
+        }
+        // Dimensions from several cubes, but none of them is on the multiplied
+        // side of a join - safe to evaluate the expression on top of join tree
+        return [measureName, [{
+          multiplied: false,
+          measure: m.measure,
+        }]];
+      }
     }
 
     const multiplied = this.multipliedJoinRowResult(cubeNameToAttach) || false;
@@ -4627,6 +4636,10 @@ export class BaseQuery {
         case: 'CASE{% if expr %} {{ expr }}{% endif %}{% for when, then in when_then %} WHEN {{ when }} THEN {{ then }}{% endfor %}{% if else_expr %} ELSE {{ else_expr }}{% endif %} END',
         is_null: '({{ expr }} IS {% if negate %}NOT {% endif %}NULL)',
         binary: '({{ left }} {{ op }} {{ right }})',
+        // Integer division with PostgreSQL semantics: truncation toward zero.
+        // Plain `/` is correct for dialects where int / int is integer division;
+        // dialects with decimal or float `/` must override this template
+        int_division: '({{ left }} / {{ right }})',
         sort: '{{ expr }} {% if asc %}ASC{% else %}DESC{% endif %} NULLS {% if nulls_first %}FIRST{% else %}LAST{% endif %}',
         order_by: '{% if index %} {{ index }} {% else %} {{ expr }} {% endif %} {% if asc %}ASC{% else %}DESC{% endif %}{% if nulls_first %} NULLS FIRST{% endif %}',
         cast: 'CAST({{ expr }} AS {{ data_type }})',
@@ -4651,7 +4664,10 @@ export class BaseQuery {
         wrap_segment_select: '{{ expr }}',
         wrap_segment_filter: '{{ expr }}',
         rolling_window_expr_timestamp_cast: '{{ value }}',
-        timestamp_literal: '{{ value }}',
+        // Timestamp constants arrive as ISO-8601 UTC strings ('2021-01-01T00:00:00.000Z').
+        // ANSI CAST of the quoted value is the most portable default; dialects override
+        // with their exact parsing construct. A bare unquoted value is never valid SQL
+        timestamp_literal: 'CAST(\'{{ value }}\' AS TIMESTAMP)',
         between: '{{ expr }} {% if negated %}NOT {% endif %}BETWEEN {{ low }} AND {{ high }}',
       },
       tesseract: {

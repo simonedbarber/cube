@@ -88,6 +88,10 @@ impl PlanSqlTemplates {
         self.driver_tools.timestamp_precision()
     }
 
+    pub fn should_reuse_params(&self) -> Result<bool, CubeError> {
+        self.driver_tools.should_reuse_params()
+    }
+
     pub fn time_stamp_cast(&self, field: String) -> Result<String, CubeError> {
         self.driver_tools.time_stamp_cast(field)
     }
@@ -806,6 +810,23 @@ impl PlanSqlTemplates {
     pub fn number_param_cast(&self, expr: &str) -> Result<String, CubeError> {
         self.render
             .render_template(&"tesseract/number_param_cast", context! { expr => expr })
+    }
+
+    pub fn like_escape_char(&self) -> Result<Option<char>, CubeError> {
+        const TEMPLATE_NAME: &str = "filters/like_escape_char";
+
+        if !self.render.contains_template(TEMPLATE_NAME) {
+            return Ok(None);
+        }
+
+        let rendered = self.render.render_template(TEMPLATE_NAME, context! {})?;
+        let mut characters = rendered.chars();
+        match (characters.next(), characters.next()) {
+            (Some(character), None) => Ok(Some(character)),
+            _ => Err(CubeError::internal(format!(
+                "{TEMPLATE_NAME} must render exactly one character"
+            ))),
+        }
     }
 
     pub fn additional_null_check(&self, need: bool, column: &String) -> Result<String, CubeError> {
