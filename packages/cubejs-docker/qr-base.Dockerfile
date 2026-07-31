@@ -2,19 +2,24 @@
 #
 # Builds the QueryRails cube fork's customizations FROM SOURCE and overlays the
 # compiled artifacts onto the official cube image, so a single image carries:
-#   - the 2-arg aggregate SQL push-down + tesseract-dedup fixes (Rust → native addon)
+#   - the 2-arg aggregate SQL push-down fix (Rust → native addon; cubesql)
 #   - the SQL function-template dead-key fix + per-dialect overrides (schema-compiler)
 #   - number_agg-without-multi_stage (schema-compiler)
-#   - the DuckLake/neo execution path (@duckdb/node-api) (duckdb-driver)
+#   - the DuckLake/neo duckdb-driver: @duckdb/node-api execution + a custom
+#     DuckDBValueConverter that renders TIME/TIME_TZ/INTERVAL to display strings
+#     (duckdb-driver)
+#
+# Fork tracks upstream v1.7.16. The tesseract dimension-only-expr dedup and the
+# number_agg validator were fixed upstream and are no longer carried as patches.
 #
 # The official `latest-debian-jdk` image DOWNLOADS a prebuilt native addon via the
-# post-installer, so it would ship the STOCK native (no 2-arg/tesseract fixes). This
+# post-installer, so it would ship the STOCK native (no 2-arg push-down fix). This
 # Dockerfile compiles the native addon from the fork source and overlays it, plus the
 # fork-built JS dist of the changed packages, onto the official image. Build context =
 # the fork repo root.
 #
 # Pin the FROM tag to the cube version this fork is based on.
-ARG CUBE_VERSION=v1.7.4
+ARG CUBE_VERSION=v1.7.16
 
 # ── Stage 1: build the native addon + changed JS dist from fork source ──────────
 FROM node:24.18.0-trixie-slim AS builder
