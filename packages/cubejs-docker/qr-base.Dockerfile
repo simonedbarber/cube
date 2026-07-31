@@ -86,7 +86,7 @@ COPY --from=builder --chown=cube:cube \
 
 # (3) The DuckLake/neo runtime dependency the patched duckdb-driver requires
 #     (the official image only ships classic `duckdb`).
-RUN cd /cube && npm install --no-save @duckdb/node-api@1.5.3-r.3
+RUN cd /cube && npm install --no-save @duckdb/node-api@1.5.5-r.3
 
 USER cube
 
