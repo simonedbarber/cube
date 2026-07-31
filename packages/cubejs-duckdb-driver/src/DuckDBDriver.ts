@@ -5,18 +5,19 @@ import {
   QueryOptions,
   StreamTableData,
   GenericDataBaseType,
-  TableStructure,
-  TableColumnQueryResult,
 } from '@cubejs-backend/base-driver';
 import { getEnv } from '@cubejs-backend/shared';
+import * as stream from 'stream';
+import {
+  DuckDBConnection,
+  DuckDBInstance,
+  DuckDBValue,
+  timestampMillisValue,
+} from '@duckdb/node-api';
 
 import { DuckDBQuery } from './DuckDBQuery';
 import { HydrationStream, transformRow } from './HydrationStream';
-// QueryRails (Epic 27, task 27.12b): execution is routed through @duckdb/node-api
-// (neo) v1.5.3 via NeoEngine, NOT the bundled classic `duckdb` (whose DuckLake ext
-// only reads catalog format <= 0.3 and CANNOT attach the v1.5.3 writer's lake).
-// NeoEngine exposes a classic-`duckdb`-shaped surface so the hooks below stay minimal.
-import { openEngine, NeoConnection, NeoDb } from './NeoEngine';
+import { cubeValueConverter } from './ValueConverter';
 
 const { version } = require('../../package.json');
 
@@ -31,9 +32,18 @@ export type DuckDBDriverConfiguration = {
 };
 
 type InitPromise = {
-  defaultConnection: NeoConnection,
-  db: NeoDb;
+  defaultConnection: DuckDBConnection,
+  instance: DuckDBInstance;
 };
+
+type ExecFn = (sql: string) => Promise<unknown>;
+
+// @duckdb/node-api (neo) binds parameters via DuckDBValue, which has no native branch for
+// JS Date. Convert Date -> DuckDBTimestampMillisecondsValue so `SELECT ?::TIMESTAMP` style
+// bound params preserve the legacy driver's contract. See upstream PR #11165.
+const normalizeValues = (values: unknown[] = []): DuckDBValue[] => values.map(
+  (value) => (value instanceof Date ? timestampMillisValue(BigInt(value.getTime())) : value as DuckDBValue)
+);
 
 const DuckDBToGenericType: Record<string, GenericDataBaseType> = {
   // DATE_TRUNC returns DATE, but Cube Store still doesn't support DATE type
@@ -66,7 +76,7 @@ export class DuckDBDriver extends BaseDriver implements DriverInterface {
     return DuckDBToGenericType[columnType.toLowerCase()] || super.toGenericType(columnType.toLowerCase(), precision, scale);
   }
 
-  private async installExtensions(extensions: string[], execAsync: (sql: string, ...params: any[]) => Promise<void>, repository: string = ''): Promise<void> {
+  private async installExtensions(extensions: string[], execAsync: ExecFn, repository: string = ''): Promise<void> {
     repository = repository ? ` FROM ${repository}` : '';
     for (const extension of extensions) {
       try {
@@ -81,7 +91,7 @@ export class DuckDBDriver extends BaseDriver implements DriverInterface {
     }
   }
 
-  private async loadExtensions(extensions: string[], execAsync: (sql: string, ...params: any[]) => Promise<void>): Promise<void> {
+  private async loadExtensions(extensions: string[], execAsync: ExecFn): Promise<void> {
     for (const extension of extensions) {
       try {
         await execAsync(`LOAD ${extension}`);
@@ -108,18 +118,18 @@ export class DuckDBDriver extends BaseDriver implements DriverInterface {
       dbUrl = ':memory:';
     }
 
-    let dbOptions;
+    let dbOptions: Record<string, string> | undefined;
     if (token) {
       dbOptions = { custom_user_agent: `Cube/${version}` };
     }
 
-    // QueryRails (27.12b): open the engine via @duckdb/node-api (neo) v1.5.3 instead
-    // of `new duckdb.Database`. NeoEngine returns a classic-shaped
-    // { defaultConnection, db } so the rest of init() (config SETs, extension load,
-    // initSql) and query()/stream()/release() are unchanged in shape. execAsync runs
-    // whole (possibly multi-statement) SQL scripts and REJECTS on the first failure.
-    const { defaultConnection, db } = await openEngine(dbUrl, dbOptions);
-    const execAsync = defaultConnection.execAsync;
+    // Create a new DuckDB instance via @duckdb/node-api (neo) — wraps released DuckDB 1.5.x
+    // binaries (the legacy `duckdb` npm package tops out at 1.4.x and cannot load extensions
+    // requiring DuckDB >= 1.5.2, e.g. quack / DuckLake > catalog format 0.3). See PR #11165.
+    const instance = await DuckDBInstance.create(dbUrl, dbOptions);
+
+    const defaultConnection = await instance.connect();
+    const execAsync: ExecFn = (sql: string) => defaultConnection.run(sql);
 
     const configuration = [
       {
@@ -196,7 +206,7 @@ export class DuckDBDriver extends BaseDriver implements DriverInterface {
     await this.loadExtensions(communityExtensions, execAsync);
 
     if (this.config.initSql) {
-      // QueryRails (27.12b): cold-cache safety. The lake initSql begins with
+      // QueryRails (lake reader): cold-cache safety. The lake initSql begins with
       // `LOAD ducklake/postgres/httpfs;` but does NOT INSTALL them — on a fresh
       // engine with no extension cache those LOADs fail. INSTALL them first
       // (idempotent; a no-op once cached). Failure here is fatal: a lake reader
@@ -209,9 +219,10 @@ export class DuckDBDriver extends BaseDriver implements DriverInterface {
         }
         throw e;
       }
-      // QueryRails (27.12b): THROW on initSql/ATTACH failure — do NOT swallow. The
-      // stock driver swallowed it ("skipping"), so a failed ATTACH left the lake
-      // un-attached and surfaced later as a misleading "Table does not exist".
+      // QueryRails (lake reader): THROW on initSql/ATTACH failure — do NOT swallow. The
+      // stock driver (and upstream PR #11165) swallowed it ("skipping"), so a failed
+      // ATTACH left the lake un-attached and surfaced later as a misleading
+      // "Table does not exist".
       try {
         await execAsync(this.config.initSql);
       } catch (e) {
@@ -224,7 +235,7 @@ export class DuckDBDriver extends BaseDriver implements DriverInterface {
 
     return {
       defaultConnection,
-      db
+      instance
     };
   }
 
@@ -267,16 +278,18 @@ export class DuckDBDriver extends BaseDriver implements DriverInterface {
   }
 
   public async query<R = unknown>(query: string, values: unknown[] = [], _options?: QueryOptions): Promise<R[]> {
-    // QueryRails (27.12b): execute via the neo connection's allAsync instead of
-    // classic promisify(connection.all). Row objects are normalized by the existing
-    // HydrationStream.transformRow — output shape is unchanged.
     const { defaultConnection } = await this.getInitiatedState();
 
-    const result = await defaultConnection.allAsync<R>(query, ...values);
-    return result.map((item) => {
+    const reader = await defaultConnection.runAndReadAll(query, normalizeValues(values));
+    // convertRowObjects uses cubeValueConverter, which renders TIME / TIME_TZ / INTERVAL
+    // to their DuckDB display strings (the built-in JS path loses the type tag and
+    // reduces them to bare bigints / bigint-bearing objects that JSON.stringify rejects).
+    // The delegated JS values (Date, bigint, number) are normalized by transformRow.
+    const rows = reader.convertRowObjects(cubeValueConverter);
+    return rows.map((item) => {
       transformRow(item);
 
-      return item;
+      return item as R;
     });
   }
 
@@ -285,23 +298,41 @@ export class DuckDBDriver extends BaseDriver implements DriverInterface {
     values: unknown[],
     { highWaterMark }: StreamOptions
   ): Promise<StreamTableData> {
-    // QueryRails (27.12b): stream via the neo connection's streamAsync (a Node
-    // Readable of row objects backed by neo's chunked reader) instead of classic
-    // `db.connect().stream(...)`. The neo connection is shared (the in-process
-    // engine is per-driver), so a per-stream close is unnecessary and would break
-    // the shared default connection; the engine is closed in the driver's release().
-    const { defaultConnection } = await this.getInitiatedState();
+    const { instance } = await this.getInitiatedState();
 
-    const rowStream = defaultConnection
-      .streamAsync(query, values || [], highWaterMark)
-      .pipe(new HydrationStream());
+    // new connection, because stream can break with
+    // Attempting to execute an unsuccessful or closed pending query result
+    // PreAggregation queue has a concurrency limit, it's why pool is not needed here
+    const connection = await instance.connect();
 
-    return {
-      rowStream,
-      release: async () => {
-        // No-op: the neo connection is owned by the driver (closed in release()).
-      }
-    };
+    try {
+      const result = await connection.stream(query, normalizeValues(values || []));
+
+      // yieldConvertedRowObjects yields one array of converted row objects per chunk;
+      // flatten to a row-at-a-time async iterable for the Readable stream. The converter
+      // formats TIME / TIME_TZ / INTERVAL (see cubeValueConverter) while delegating the
+      // rest to the default JS conversion that transformRow normalizes downstream.
+      const rowIterator = async function* rows(): AsyncGenerator<Record<string, unknown>> {
+        for await (const chunk of result.yieldConvertedRowObjects(cubeValueConverter)) {
+          for (const row of chunk) {
+            yield row;
+          }
+        }
+      };
+
+      const rowStream = stream.Readable.from(rowIterator(), { highWaterMark }).pipe(new HydrationStream());
+
+      return {
+        rowStream,
+        release: async () => {
+          connection.closeSync();
+        }
+      };
+    } catch (e) {
+      connection.closeSync();
+
+      throw e;
+    }
   }
 
   public async testConnection(): Promise<void> {
@@ -313,13 +344,12 @@ export class DuckDBDriver extends BaseDriver implements DriverInterface {
   }
 
   public async release(): Promise<void> {
-    // QueryRails (27.12b): close the neo instance via NeoEngine's db.closeAsync()
-    // instead of promisify(db.close).
     if (this.initPromise) {
-      const { db } = await this.initPromise;
+      const { defaultConnection, instance } = await this.initPromise;
       this.initPromise = null;
 
-      await db.closeAsync();
+      defaultConnection.closeSync();
+      instance.closeSync();
     }
   }
 }
