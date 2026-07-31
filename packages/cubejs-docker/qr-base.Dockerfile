@@ -2,26 +2,31 @@
 #
 # Builds the QueryRails cube fork's customizations FROM SOURCE and overlays the
 # compiled artifacts onto the official cube image, so a single image carries:
-#   - the 2-arg aggregate SQL push-down + tesseract-dedup fixes (Rust → native addon)
+#   - the 2-arg aggregate SQL push-down fix (Rust → native addon; cubesql)
 #   - the SQL function-template dead-key fix + per-dialect overrides (schema-compiler)
 #   - number_agg-without-multi_stage (schema-compiler)
-#   - the DuckLake/neo execution path (@duckdb/node-api) (duckdb-driver)
+#   - the DuckLake/neo duckdb-driver: @duckdb/node-api execution + a custom
+#     DuckDBValueConverter that renders TIME/TIME_TZ/INTERVAL to display strings
+#     (duckdb-driver)
+#
+# Fork tracks upstream v1.7.26. QueryRails keeps only the custom behaviour that
+# remains absent upstream, and qualifies the complete rebased image by digest.
 #
 # The official `latest-debian-jdk` image DOWNLOADS a prebuilt native addon via the
-# post-installer, so it would ship the STOCK native (no 2-arg/tesseract fixes). This
+# post-installer, so it would ship the STOCK native (no 2-arg push-down fix). This
 # Dockerfile compiles the native addon from the fork source and overlays it, plus the
 # fork-built JS dist of the changed packages, onto the official image. Build context =
 # the fork repo root.
 #
 # Pin the FROM tag to the cube version this fork is based on.
-ARG CUBE_VERSION=v1.6.64
+ARG CUBE_VERSION=v1.7.26
 
 # ── Stage 1: build the native addon + changed JS dist from fork source ──────────
-FROM node:22.22.0-bookworm-slim AS builder
+FROM node:24.18.0-trixie-slim AS builder
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-       curl ca-certificates python3 python3.11 libpython3.11-dev gcc g++ make cmake openjdk-17-jdk-headless \
+       curl ca-certificates python3 python3.13 libpython3.13-dev gcc g++ make cmake openjdk-21-jdk-headless \
     && rm -rf /var/lib/apt/lists/*
 
 # Rust toolchain — the channel is pinned by rust/cubesql/rust-toolchain.toml (1.90.0),
