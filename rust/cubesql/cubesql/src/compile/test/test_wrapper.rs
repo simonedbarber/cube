@@ -82,7 +82,9 @@ async fn test_wrapper_two_arg_aggregate_push_down() {
         let sql = logical_plan.find_cube_scan_wrapped_sql().wrapped_sql.sql;
         assert!(
             sql.contains(&format!("{native}(")),
-            "expected two-arg {sql_fn} to push down, got: {sql}"
+            "expected two-arg {} to push down, got: {}",
+            sql_fn,
+            sql,
         );
 
         let _physical_plan = query_plan.as_physical_plan().await.unwrap();
