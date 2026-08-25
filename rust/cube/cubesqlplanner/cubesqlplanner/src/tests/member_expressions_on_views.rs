@@ -281,7 +281,7 @@ async fn test_many_to_one_view_same_cube_two_dim_expr() {
     );
 }
 
-/// The single-cube guard must still reject a dimension-only expression that spans two DISTINCT
+/// The multiplication guard must still reject a dimension-only expression that spans two DISTINCT
 /// cubes (`root_dim` on `many_to_one_root`, `child_dim` on `many_to_one_child`). That is a
 /// separate, unimplemented case — not the same-cube duplication the de-dup fix addresses — so the
 /// de-dup must not silently admit it.
@@ -299,8 +299,9 @@ async fn test_many_to_one_view_cross_cube_two_dim_expr_still_rejected() {
         .build_sql_from_options(options)
         .expect_err("cross-cube dimension-only expression should still be rejected");
     assert!(
-        err.to_string().contains("Expected single cube"),
-        "expected single-cube guard error, got: {err}"
+        err.to_string().contains("references cubes")
+            && err.to_string().contains("row multiplication"),
+        "expected cross-cube multiplication guard error, got: {err}"
     );
 }
 
