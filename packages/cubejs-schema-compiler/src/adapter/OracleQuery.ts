@@ -270,6 +270,16 @@ export class OracleQuery extends BaseQuery {
     // length, so use the max standard VARCHAR2 size.
     templates.types.string = 'VARCHAR2(4000)';
 
+    // SQL function-template fix: Oracle native forms / unsupported deletes
+    templates.functions.LOG10 = 'LOG(10, {{ args_concat }})';
+    templates.functions.CHARACTERLENGTH = 'LENGTH({{ args_concat }})';
+    templates.functions.OCTETLENGTH = 'LENGTHB({{ args_concat }})';
+    delete templates.functions.COT;
+    delete templates.functions.DEGREES;
+    delete templates.functions.RADIANS;
+    delete templates.functions.BITLENGTH;
+    delete templates.functions.STARTSWITH;
+
     return templates;
   }
 
@@ -280,20 +290,6 @@ export class OracleQuery extends BaseQuery {
   public unixTimestampSql() {
     // eslint-disable-next-line quotes
     return `((cast (systimestamp at time zone 'UTC' as date) - date '1970-01-01') * 86400)`;
-  }
-
-  public sqlTemplates() {
-    const templates = super.sqlTemplates();
-    // SQL function-template fix: Oracle native forms / unsupported deletes
-    templates.functions.LOG10 = 'LOG(10, {{ args_concat }})';
-    templates.functions.CHARACTERLENGTH = 'LENGTH({{ args_concat }})';
-    templates.functions.OCTETLENGTH = 'LENGTHB({{ args_concat }})';
-    delete templates.functions.COT;
-    delete templates.functions.DEGREES;
-    delete templates.functions.RADIANS;
-    delete templates.functions.BITLENGTH;
-    delete templates.functions.STARTSWITH;
-    return templates;
   }
 
   public preAggregationTableName(cube, preAggregationName, skipSchema) {

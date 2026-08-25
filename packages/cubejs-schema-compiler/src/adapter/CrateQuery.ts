@@ -16,12 +16,6 @@ export class CrateQuery extends PostgresQuery {
 
   public sqlTemplates() {
     const templates = super.sqlTemplates();
-    delete templates.functions.WIDTH_BUCKET;
-    return templates;
-  }
-
-  public sqlTemplates() {
-    const templates = super.sqlTemplates();
     // SQL function-template fix: Crate native forms / unsupported deletes
     templates.functions.VARIANCEPOP = 'VARIANCE({{ args_concat }})';
     templates.functions.LOG10 = 'LOG({{ args_concat }})';
@@ -30,6 +24,7 @@ export class CrateQuery extends PostgresQuery {
     delete templates.functions.COVARIANCEPOP;
     delete templates.functions.CORRELATION;
     delete templates.functions.PERCENTILECONT;
+    delete templates.functions.WIDTH_BUCKET;
     return templates;
   }
 }

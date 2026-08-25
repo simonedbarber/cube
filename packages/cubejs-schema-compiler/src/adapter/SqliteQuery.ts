@@ -87,6 +87,7 @@ export class SqliteQuery extends BaseQuery {
     delete templates.functions.BITLENGTH;
     delete templates.functions.STARTSWITH;
     delete templates.functions.PERCENTILECONT;
+    delete templates.functions.WIDTH_BUCKET;
     return templates;
   }
 
@@ -100,9 +101,4 @@ export class SqliteQuery extends BaseQuery {
     return `strftime('%s','now')`;
   }
 
-  public sqlTemplates() {
-    const templates = super.sqlTemplates();
-    delete templates.functions.WIDTH_BUCKET;
-    return templates;
-  }
 }
