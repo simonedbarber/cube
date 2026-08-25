@@ -101,6 +101,10 @@ export class SqliteQuery extends BaseQuery {
     delete templates.functions.BITLENGTH;
     delete templates.functions.STARTSWITH;
     delete templates.functions.PERCENTILECONT;
+    delete templates.functions.WIDTH_BUCKET;
+    // A compound select takes no parenthesised operands in SQLite, so the SQL API leaves
+    // set operations to post processing here rather than pushing them down.
+    delete templates.statements.union;
     return templates;
   }
 
@@ -114,12 +118,4 @@ export class SqliteQuery extends BaseQuery {
     return `strftime('%s','now')`;
   }
 
-  public sqlTemplates() {
-    const templates = super.sqlTemplates();
-    delete templates.functions.WIDTH_BUCKET;
-    // A compound select takes no parenthesised operands in SQLite, so the SQL API leaves
-    // set operations to post processing here rather than pushing them down.
-    delete templates.statements.union;
-    return templates;
-  }
 }
