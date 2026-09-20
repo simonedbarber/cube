@@ -221,6 +221,7 @@ export class DuckDBDriver extends BaseDriver implements DriverInterface {
           throw e;
         }
       }
+
       // QueryRails (lake reader): THROW on initSql/ATTACH failure — do NOT swallow.
       // The stock driver logs "(skipping)" and continues, so a failed ATTACH leaves
       // the lake un-attached and surfaces later as a misleading

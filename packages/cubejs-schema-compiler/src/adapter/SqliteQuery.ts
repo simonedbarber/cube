@@ -117,5 +117,4 @@ export class SqliteQuery extends BaseQuery {
     // eslint-disable-next-line quotes
     return `strftime('%s','now')`;
   }
-
 }
