@@ -27,14 +27,18 @@ wrapper rewrite is skipped → the query errors with a misleading
 `TRIM`, `BITLENGTH`, `OCTETLENGTH`, `STARTSWITH`). The old SQL-spelling keys are
 left as inert aliases. The same map drives both cubesql and the Tesseract planner.
 
-### Two-argument aggregates (CORR, COVAR_*) — Rust change
+### Two-argument aggregates (CORR, COVAR_*) — now upstream
 
-The cubesql wrapper rewrite rules only matched **single-argument** aggregates
+The cubesql wrapper rewrite rules used to match **single-argument** aggregates only
 (`agg_fun_expr(?fun, vec![?expr], …)`), so two-arg aggregates (`CORR`, `COVAR_SAMP`,
-`COVAR_POP`) never matched and failed before the template lookup. Additive 2-arg
-push-down/pull-up rules were added in
-`rust/cubesql/.../rules/wrapper/aggregate_function.rs` (the template alone is not
-sufficient for these — the rewriter must match the 2-arg shape).
+`COVAR_POP`) never matched and failed before the template lookup. The fork carried
+additive 2-arg push-down/pull-up rules for this.
+
+**Dropped at the v1.7.42 rebase.** Upstream generalised the same rules to a variadic
+argument list (`agg_fun_expr_var_arg` + `agg_fun_expr_args` rules in
+`rust/cubesql/.../rules/wrapper/aggregate_function.rs`), which subsumes the fork's
+two-argument special case, so no Rust delta remains here. The templates below are
+still required: the rewriter shape and the template lookup are independent gates.
 
 ## Coverage matrix
 
