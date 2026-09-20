@@ -1,0 +1,138 @@
+# QueryRails: build the custom cube base image ONCE on the fork, then on merge to
+# master only RE-TAG it to :latest — never rebuild on merge.
+#
+#   build job   — compiles qr-base.Dockerfile (fork JS dist overlaid on the
+#                 official cube image) and pushes an IMMUTABLE :<version>-<sha>
+#                 image. Runs on PR to master, branch push, and dispatch. The image
+#                 is tagged by the PR HEAD sha (so the merge commit can find it).
+#   promote job — on push to master (merge / fast-forward), re-tags that already-built
+#                 image to the stable, version-independent :latest (+ :<version>) via
+#                 `docker buildx imagetools create`. Pure registry manifest copy — NO
+#                 rebuild. :latest moves to the new image; the old image loses :latest.
+#
+# query_rails apps/cube/Dockerfile pins `FROM ghcr.io/simonedbarber/cube:latest`.
+name: QR Build Cube Base
+
+on:
+  workflow_dispatch:
+    inputs:
+      cube_version:
+        description: 'Base cube version (FROM cubejs/cube:<version>-jdk)'
+        type: string
+        default: v1.7.42
+  pull_request:
+    branches: [master]
+    paths:
+      - 'packages/cubejs-docker/qr-base.Dockerfile'
+      - '.github/workflows/qr-build-base.yml'
+  push:
+    branches:
+      - master
+      - codex/rebase-v1.7.42-clean
+    paths:
+      - 'packages/cubejs-docker/qr-base.Dockerfile'
+      - '.github/workflows/qr-build-base.yml'
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: ghcr.io/simonedbarber/cube
+
+jobs:
+  build:
+    # Build + push the immutable artifact. Runs everywhere EXCEPT a master push
+    # (master only re-tags — see the promote job).
+    if: ${{ !(github.event_name == 'push' && github.ref == 'refs/heads/master') }}
+    name: Build + push artifact
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v4
+
+      - name: Resolve cube version
+        id: ver
+        env:
+          IN: ${{ inputs.cube_version }}
+        run: echo "v=${IN:-v1.7.42}" >> "$GITHUB_OUTPUT"
+
+      # Tag by the PR HEAD sha so the merge commit's 2nd parent matches on promote;
+      # otherwise the pushed/dispatched commit sha.
+      - name: Resolve build sha
+        id: bsha
+        env:
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          GH_SHA: ${{ github.sha }}
+        run: echo "sha=${PR_HEAD:-$GH_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build + push immutable artifact
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: packages/cubejs-docker/qr-base.Dockerfile
+          platforms: linux/amd64
+          push: true
+          build-args: |
+            CUBE_VERSION=${{ steps.ver.outputs.v }}
+          tags: ${{ env.IMAGE }}:${{ steps.ver.outputs.v }}-${{ steps.bsha.outputs.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  promote:
+    # On merge / fast-forward to master: re-tag the already-built artifact to the
+    # stable :latest (+ :<version>). NO rebuild — pure registry manifest copy.
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
+    name: Promote to :latest (re-tag, no rebuild)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2 # need HEAD^2 to find a merge commit's source
+
+      - name: Resolve cube version
+        id: ver
+        env:
+          IN: ${{ inputs.cube_version }}
+        run: echo "v=${IN:-v1.7.42}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Re-tag merged artifact as :latest
+        env:
+          IMG: ${{ env.IMAGE }}
+          VER: ${{ steps.ver.outputs.v }}
+          GH_SHA: ${{ github.sha }}
+        run: |
+          # The merged content was built on the branch/PR as ${IMG}:${VER}-<sha>.
+          # Merge commit → its 2nd parent (the PR head). Fast-forward → ${GH_SHA}.
+          SRC="${GH_SHA}"
+          if git rev-parse -q --verify "HEAD^2" >/dev/null; then SRC="$(git rev-parse HEAD^2)"; fi
+          echo "Promoting ${IMG}:${VER}-${SRC} -> :latest + :${VER} (no rebuild)"
+          docker buildx imagetools create \
+            -t "${IMG}:latest" \
+            -t "${IMG}:${VER}" \
+            "${IMG}:${VER}-${SRC}"
+          {
+            echo "### Promoted to :latest (re-tag, no rebuild)"
+            echo "- source: \`${IMG}:${VER}-${SRC}\`"
+            echo "- now \`:latest\` and \`:${VER}\` point to it; the previous image loses \`:latest\`."
+          } >> "$GITHUB_STEP_SUMMARY"
