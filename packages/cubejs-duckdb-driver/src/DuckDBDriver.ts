@@ -204,14 +204,34 @@ export class DuckDBDriver extends BaseDriver implements DriverInterface {
     await this.loadExtensions(communityExtensions, execAsync);
 
     if (this.config.initSql) {
+      // QueryRails (lake reader): cold-cache safety. The lake initSql begins with
+      // `LOAD ducklake/postgres/httpfs;` but does NOT INSTALL them — on a fresh
+      // engine with no extension cache those LOADs fail. INSTALL them first
+      // (idempotent; a no-op once cached). Failure here is fatal: a lake reader
+      // without ducklake/postgres/httpfs is useless.
+      // Gated on the initSql actually being a DuckLake attach, so a generic
+      // initSql never triggers a (network-bound) extension install.
+      if (/\bducklake\b/i.test(this.config.initSql)) {
+        try {
+          await execAsync('INSTALL ducklake; INSTALL postgres; INSTALL httpfs;');
+        } catch (e) {
+          if (this.logger) {
+            console.error('DuckDB - error installing lake extensions', { e });
+          }
+          throw e;
+        }
+      }
+      // QueryRails (lake reader): THROW on initSql/ATTACH failure — do NOT swallow.
+      // The stock driver logs "(skipping)" and continues, so a failed ATTACH leaves
+      // the lake un-attached and surfaces later as a misleading
+      // "Table does not exist".
       try {
         await execAsync(this.config.initSql);
       } catch (e) {
         if (this.logger) {
-          console.error('DuckDB - error on init sql (skipping)', {
-            e
-          });
+          console.error('DuckDB - error on init sql', { e });
         }
+        throw e;
       }
     }
   }

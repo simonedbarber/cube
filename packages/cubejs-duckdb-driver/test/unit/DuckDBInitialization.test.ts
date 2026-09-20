@@ -68,15 +68,48 @@ describe('DuckDBDriver initialization', () => {
     ]);
   });
 
-  test('continues after setting and initSql errors', async () => {
+  // QueryRails: initSql is fail-fast. A failed ATTACH must not leave a lake-less
+  // engine serving queries, so the driver throws instead of logging "(skipping)".
+  test('fails fast when initSql errors, and still ignores setting errors', async () => {
     process.env.CUBEJS_DB_DUCKDB_MEMORY_LIMIT = 'invalid';
     driver = new TestDuckDBDriver({ initSql: 'INVALID SQL' });
-    connection.run.mockRejectedValue(new Error('invalid SQL'));
+    connection.run.mockImplementation(async (sql: string) => {
+      if (sql === 'INVALID SQL') {
+        throw new Error('invalid SQL');
+      }
+    });
+
+    await expect(driver.initialize()).rejects.toThrow('invalid SQL');
+
+    expect(connection.run).toHaveBeenCalledWith('INVALID SQL');
+    expect(connection.closeSync).toHaveBeenCalledTimes(1);
+    expect(instance.closeSync).toHaveBeenCalledTimes(1);
+  });
+
+  // QueryRails: a DuckLake initSql INSTALLs ducklake/postgres/httpfs first, because
+  // the lake initSql only LOADs them and a cold extension cache would fail.
+  test('installs the lake extensions before a ducklake initSql', async () => {
+    driver = new TestDuckDBDriver({ initSql: "ATTACH 'ducklake:postgres:...' AS lake;" });
 
     await driver.initialize();
 
-    expect(connection.run).toHaveBeenCalledWith('INVALID SQL');
-    expect(instance.closeSync).not.toHaveBeenCalled();
+    expect(connection.run.mock.calls.map(([sql]) => sql)).toEqual([
+      'INSTALL ducklake; INSTALL postgres; INSTALL httpfs;',
+      "ATTACH 'ducklake:postgres:...' AS lake;",
+    ]);
+  });
+
+  test('fails fast when the lake extension install errors', async () => {
+    driver = new TestDuckDBDriver({ initSql: "ATTACH 'ducklake:postgres:...' AS lake;" });
+    connection.run.mockImplementation(async (sql: string) => {
+      if (sql.startsWith('INSTALL ducklake')) {
+        throw new Error('no network');
+      }
+    });
+
+    await expect(driver.initialize()).rejects.toThrow('no network');
+    expect(connection.run).not.toHaveBeenCalledWith("ATTACH 'ducklake:postgres:...' AS lake;");
+    expect(instance.closeSync).toHaveBeenCalledTimes(1);
   });
 
   test.each(['INSTALL json', 'LOAD json', "CREATE SECRET (TYPE S3, PROVIDER 'CREDENTIAL_CHAIN')"])(
