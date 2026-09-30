@@ -10,7 +10,7 @@
 #                 `docker buildx imagetools create`. Pure registry manifest copy — NO
 #                 rebuild. :latest moves to the new image; the old image loses :latest.
 #
-# query_rails apps/cube/Dockerfile pins `FROM ghcr.io/simonedbarber/cube:latest`.
+# QueryRails pins the immutable image digest after integration validation.
 name: QR Build Cube Base
 
 on:
@@ -24,13 +24,21 @@ on:
     branches: [master]
     paths:
       - 'packages/cubejs-docker/qr-base.Dockerfile'
+      - '.dockerignore'
+      - 'packages/cubejs-backend-native/**'
+      - 'rust/cubesql/**'
+      - 'rust/cube/**'
       - '.github/workflows/qr-build-base.yml'
   push:
     branches:
       - master
-      - codex/rebase-v1.7.42-clean
+      - 'codex/**'
     paths:
       - 'packages/cubejs-docker/qr-base.Dockerfile'
+      - '.dockerignore'
+      - 'packages/cubejs-backend-native/**'
+      - 'rust/cubesql/**'
+      - 'rust/cube/**'
       - '.github/workflows/qr-build-base.yml'
 
 permissions:
@@ -51,6 +59,9 @@ jobs:
     steps:
       - name: Checkout fork
         uses: actions/checkout@v4
+
+      - name: Free space for native compilation
+        uses: ./.github/actions/maximize-build-space
 
       - name: Resolve cube version
         id: ver
@@ -86,6 +97,7 @@ jobs:
           push: true
           build-args: |
             CUBE_VERSION=${{ steps.ver.outputs.v }}
+            CUBE_SOURCE_REVISION=${{ steps.bsha.outputs.sha }}
           tags: ${{ env.IMAGE }}:${{ steps.ver.outputs.v }}-${{ steps.bsha.outputs.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

@@ -16,6 +16,215 @@ use crate::compile::{
     DatabaseProtocol,
 };
 
+/// A quoted output name containing a dot is one identifier. It must not
+/// shadow a qualified source column in the WHERE clause below that projection.
+async fn assert_projection_alias_date_filter_keeps_source_member(
+    join: &str,
+    source: &str,
+    output: &str,
+) {
+    init_testing_logger();
+    let plan = convert_select_to_query_plan(
+        format!(
+            r#"SELECT "__qr_calendar_grain_1" AS "{output}", "total"
+                FROM (
+                    SELECT MultiTypeCube.dim_date0 AS "__qr_calendar_grain_1",
+                        MEASURE(KibanaSampleDataEcommerce.count) AS "total"
+                    FROM KibanaSampleDataEcommerce {join}
+                    WHERE {source} >= '2026-01-31T00:00:00.000Z'
+                        AND {source} <= '2026-02-02T00:00:00.000Z'
+                    GROUP BY 1
+                ) AS "__qr_calendar_projection" ORDER BY 1"#
+        ),
+        DatabaseProtocol::PostgreSQL,
+    )
+    .await;
+    let request = plan.as_logical_plan().find_cube_scan().request;
+    assert_eq!(
+        request.dimensions,
+        Some(vec!["MultiTypeCube.dim_date0".to_string()]),
+        "{join}"
+    );
+    assert_eq!(
+        request.time_dimensions,
+        Some(vec![V1LoadRequestQueryTimeDimension {
+            dimension: "KibanaSampleDataEcommerce.order_date".to_string(),
+            granularity: None,
+            date_range: Some(json!([
+                "2026-01-31T00:00:00.000Z",
+                "2026-02-02T00:00:00.000Z"
+            ])),
+        }]),
+        "{join}"
+    );
+    assert_eq!(
+        request.join_hints,
+        Some(vec![vec![
+            "KibanaSampleDataEcommerce".to_string(),
+            "MultiTypeCube".to_string(),
+        ]]),
+        "{join}"
+    );
+}
+
+#[tokio::test]
+async fn test_cube_join_projection_alias_date_filter_keeps_source_member_cross() {
+    assert_projection_alias_date_filter_keeps_source_member(
+        "CROSS JOIN MultiTypeCube",
+        r#"KibanaSampleDataEcommerce.order_date"#,
+        "KibanaSampleDataEcommerce.order_date",
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn test_cube_join_projection_alias_date_filter_keeps_source_member_cross_quoted_components() {
+    assert_projection_alias_date_filter_keeps_source_member(
+        "CROSS JOIN MultiTypeCube",
+        r#""KibanaSampleDataEcommerce"."order_date""#,
+        "KibanaSampleDataEcommerce.order_date",
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn test_cube_join_projection_alias_date_filter_keeps_source_member_left() {
+    assert_projection_alias_date_filter_keeps_source_member(
+        "LEFT JOIN MultiTypeCube ON KibanaSampleDataEcommerce.__cubeJoinField = MultiTypeCube.__cubeJoinField",
+        r#"KibanaSampleDataEcommerce.order_date"#,
+        "KibanaSampleDataEcommerce.order_date",
+    ).await;
+}
+
+#[tokio::test]
+async fn test_cube_join_projection_alias_date_filter_keeps_source_member_left_quoted_components() {
+    assert_projection_alias_date_filter_keeps_source_member(
+        "LEFT JOIN MultiTypeCube ON KibanaSampleDataEcommerce.__cubeJoinField = MultiTypeCube.__cubeJoinField",
+        r#""KibanaSampleDataEcommerce"."order_date""#,
+        "KibanaSampleDataEcommerce.order_date",
+    ).await;
+}
+
+async fn assert_projection_alias_date_filter_keeps_derived_member(column: &str) {
+    init_testing_logger();
+    let plan = convert_select_to_query_plan(
+        format!(r#"SELECT projected."KibanaSampleDataEcommerce.order_date", projected."total"
+        FROM (
+            SELECT MultiTypeCube.dim_date0 AS "KibanaSampleDataEcommerce.order_date",
+                MEASURE(KibanaSampleDataEcommerce.count) AS "total"
+            FROM KibanaSampleDataEcommerce
+            LEFT JOIN MultiTypeCube ON KibanaSampleDataEcommerce.__cubeJoinField = MultiTypeCube.__cubeJoinField
+            GROUP BY 1
+        ) AS projected
+        WHERE {column} >= '2026-01-31T00:00:00.000Z'
+            AND {column} <= '2026-02-02T00:00:00.000Z'
+        ORDER BY 1"#),
+        DatabaseProtocol::PostgreSQL,
+    ).await;
+    let request = plan.as_logical_plan().find_cube_scan().request;
+    assert_eq!(
+        request.time_dimensions,
+        Some(vec![V1LoadRequestQueryTimeDimension {
+            dimension: "MultiTypeCube.dim_date0".to_string(),
+            granularity: None,
+            date_range: Some(json!([
+                "2026-01-31T00:00:00.000Z",
+                "2026-02-02T00:00:00.000Z"
+            ])),
+        }])
+    );
+}
+
+#[tokio::test]
+async fn test_cube_join_projection_alias_date_filter_leaf_alias_keeps_source_member() {
+    assert_projection_alias_date_filter_keeps_source_member(
+        "LEFT JOIN MultiTypeCube ON KibanaSampleDataEcommerce.__cubeJoinField = MultiTypeCube.__cubeJoinField",
+        "KibanaSampleDataEcommerce.order_date",
+        "order_date",
+    ).await;
+}
+
+#[tokio::test]
+async fn test_cube_join_projection_alias_date_filter_keeps_derived_member() {
+    assert_projection_alias_date_filter_keeps_derived_member(
+        r#"projected."KibanaSampleDataEcommerce.order_date""#,
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn test_cube_join_projection_alias_date_filter_keeps_unqualified_derived_member() {
+    assert_projection_alias_date_filter_keeps_derived_member(
+        r#""KibanaSampleDataEcommerce.order_date""#,
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn test_cube_join_projection_alias_date_filter_with_table_aliases() {
+    init_testing_logger();
+    let plan = convert_select_to_query_plan(
+        r#"SELECT "grain" AS "fact.order_date", "total"
+        FROM (
+            SELECT calendar.dim_date0 AS "grain", MEASURE(fact.count) AS "total"
+            FROM KibanaSampleDataEcommerce fact
+            LEFT JOIN MultiTypeCube calendar ON fact.__cubeJoinField = calendar.__cubeJoinField
+            WHERE fact.order_date >= '2026-01-31T00:00:00.000Z'
+                AND fact.order_date <= '2026-02-02T00:00:00.000Z'
+            GROUP BY 1
+        ) AS projected ORDER BY 1"#
+            .to_string(),
+        DatabaseProtocol::PostgreSQL,
+    )
+    .await;
+    let request = plan.as_logical_plan().find_cube_scan().request;
+    assert_eq!(
+        request.time_dimensions,
+        Some(vec![V1LoadRequestQueryTimeDimension {
+            dimension: "KibanaSampleDataEcommerce.order_date".to_string(),
+            granularity: None,
+            date_range: Some(json!([
+                "2026-01-31T00:00:00.000Z",
+                "2026-02-02T00:00:00.000Z"
+            ])),
+        }])
+    );
+}
+
+#[tokio::test]
+async fn test_cube_join_projection_alias_date_filter_same_leaf_across_relations() {
+    init_testing_logger();
+    let plan = convert_select_to_query_plan(
+        r#"SELECT calendar.order_date, MEASURE(fact.count) AS total
+        FROM KibanaSampleDataEcommerce fact
+        LEFT JOIN (
+            SELECT dim_date0 AS order_date, __cubeJoinField FROM MultiTypeCube
+        ) calendar ON fact.__cubeJoinField = calendar.__cubeJoinField
+        WHERE fact.order_date >= '2026-01-31T00:00:00.000Z'
+            AND fact.order_date <= '2026-02-02T00:00:00.000Z'
+        GROUP BY 1 ORDER BY 1"#
+            .to_string(),
+        DatabaseProtocol::PostgreSQL,
+    )
+    .await;
+    let request = plan.as_logical_plan().find_cube_scan().request;
+    assert_eq!(
+        request.dimensions,
+        Some(vec!["MultiTypeCube.dim_date0".to_string()])
+    );
+    assert_eq!(
+        request.time_dimensions,
+        Some(vec![V1LoadRequestQueryTimeDimension {
+            dimension: "KibanaSampleDataEcommerce.order_date".to_string(),
+            granularity: None,
+            date_range: Some(json!([
+                "2026-01-31T00:00:00.000Z",
+                "2026-02-02T00:00:00.000Z"
+            ])),
+        }])
+    );
+}
+
 #[tokio::test]
 async fn powerbi_join() {
     if !Rewriter::sql_push_down_enabled() {

@@ -724,8 +724,33 @@ pub fn column_name_to_member_vec(
 impl LogicalPlanData {
     // TODO use it instead of find_member_by_alias in more places
     fn find_member_by_column(&mut self, column: &Column) -> Option<(&MemberNameToExpr, String)> {
-        let name = column.flat_name();
-        self.find_member_by_alias(&name)
+        let member_names_to_expr = self.member_name_to_expr.as_mut()?;
+        // Keep identifier components separate: `fact.order_date` and
+        // `projected."fact.order_date"` must not resolve to the same output.
+        for (index, (_, _, expr)) in member_names_to_expr
+            .list
+            .iter()
+            .enumerate()
+            .skip(member_names_to_expr.uncached_column_lookups_offset)
+        {
+            let member_column = match expr {
+                Expr::Column(member_column) => member_column.clone(),
+                Expr::Alias(_, alias) => Column::from_name(alias),
+                _ => Column::from_name(expr_column_name_with_relation(
+                    expr,
+                    &mut WithColumnRelation(None),
+                )),
+            };
+            let _ = member_names_to_expr
+                .cached_column_lookups
+                .try_insert(member_column.clone(), index);
+            let _ = member_names_to_expr
+                .cached_column_lookups
+                .try_insert(Column::from_name(member_column.name), index);
+        }
+        member_names_to_expr.uncached_column_lookups_offset = member_names_to_expr.list.len();
+        let index = member_names_to_expr.cached_column_lookups.get(column)?;
+        Some((&member_names_to_expr.list[*index], column.flat_name()))
     }
 
     fn find_member_by_alias(&mut self, name: &str) -> Option<(&MemberNameToExpr, String)> {

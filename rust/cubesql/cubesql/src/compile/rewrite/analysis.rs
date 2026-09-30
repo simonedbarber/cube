@@ -67,6 +67,10 @@ pub struct MemberNamesToExpr {
     // Note that using Vec<(String, usize)> had nearly identical performance the last time that was
     // benchmarked.
     pub cached_lookups: hashbrown::HashMap<String, usize>,
+    /// Column lookups preserve relation and identifier boundaries.
+    pub cached_column_lookups: hashbrown::HashMap<Column, usize>,
+    /// Entries after this offset have not been added to the Column cache.
+    pub uncached_column_lookups_offset: usize,
     /// The lookups in [uncached_lookups_offset, list.len()) are not completely cached.
     pub uncached_lookups_offset: usize,
 }
@@ -728,6 +732,8 @@ impl LogicalPlanAnalysis {
         list.map(|x| MemberNamesToExpr {
             list: x,
             cached_lookups: hashbrown::HashMap::new(),
+            cached_column_lookups: hashbrown::HashMap::new(),
+            uncached_column_lookups_offset: 0,
             uncached_lookups_offset: 0,
         })
     }

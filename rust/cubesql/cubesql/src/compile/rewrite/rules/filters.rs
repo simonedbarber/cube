@@ -6,8 +6,8 @@ use crate::{
         analysis::{ConstantFolding, Member, OriginalExpr},
         between_expr, binary_expr, case_expr, case_expr_var_arg, cast_expr, cast_expr_explicit,
         change_user_member, column_expr, cube_scan, cube_scan_filters,
-        cube_scan_filters_empty_tail, cube_scan_members, dimension_expr, expr_column_name, filter,
-        filter_member, filter_op, filter_op_filters, filter_op_filters_empty_tail, filter_replacer,
+        cube_scan_filters_empty_tail, cube_scan_members, dimension_expr, filter, filter_member,
+        filter_op, filter_op_filters, filter_op_filters_empty_tail, filter_replacer,
         filter_simplify_pull_up_replacer, filter_simplify_push_down_replacer, fun_expr,
         fun_expr_args_legacy, fun_expr_var_arg, inlist_expr, inlist_expr_list, is_not_null_expr,
         is_null_expr, like_expr, limit, list_rewrite, literal_bool, literal_expr, literal_int,
@@ -4920,11 +4920,11 @@ impl FilterRules {
         }
         for alias_to_cube in alias_to_cubes {
             for column in columns.iter() {
-                let alias_name = expr_column_name(&Expr::Column(column.clone()), &None);
-
+                // String aliases carry no relation; qualified references must
+                // resolve through the scoped Column lookup below.
                 let member_name = aliases
                     .iter()
-                    .find(|(a, _)| a == &alias_name)
+                    .find(|(a, _)| column.relation.is_none() && a == &column.name)
                     .map(|(_, name)| name.to_string());
                 let (member_name, granularity) = if member_name.is_some() {
                     (member_name, None)
@@ -4933,7 +4933,7 @@ impl FilterRules {
                     egraph
                         .index_mut(subst[members_var])
                         .data
-                        .find_member_by_alias(&alias_name)
+                        .find_member_by_column(column)
                         .map(|((member_name, member, _), _)| {
                             let member_name: Option<String> = member_name.clone();
                             if let Member::TimeDimension { granularity, .. } = member {
