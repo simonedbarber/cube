@@ -17,6 +17,7 @@ mod measure_symbol;
 mod member_expressions_on_views;
 mod no_query_tools_leak;
 mod positional_params;
+mod row_level_filters;
 mod string_measures;
 mod subquery_dimensions;
 mod symbol_transforms;

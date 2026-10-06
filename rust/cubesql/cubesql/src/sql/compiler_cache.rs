@@ -20,6 +20,10 @@ use uuid::Uuid;
 
 #[async_trait]
 pub trait CompilerCache: Send + Sync + Debug {
+    /// Release cached rewrite graphs at the owning server's shutdown boundary.
+    /// Their analysis retains session services, including this cache itself.
+    async fn clear(&self);
+
     async fn rewrite_rules(
         &self,
         cache_entry: Arc<CompilerCacheEntry>,
@@ -73,6 +77,10 @@ crate::di_service!(CompilerCacheImpl, [CompilerCache]);
 
 #[async_trait]
 impl CompilerCache for CompilerCacheImpl {
+    async fn clear(&self) {
+        self.compiler_id_to_entry.lock().await.clear();
+    }
+
     async fn rewrite_rules(
         &self,
         cache_entry: Arc<CompilerCacheEntry>,

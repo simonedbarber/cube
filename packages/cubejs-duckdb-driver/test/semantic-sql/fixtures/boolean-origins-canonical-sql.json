@@ -1,0 +1,38 @@
+{
+  "modelSource": "cube('analytics_boolean_origins', {\n  sql: 'SELECT * FROM cssql_oracle.analytics_boolean_origins',\n  access_policy: [{ group: 'semantic_analyst', member_level: { includes: '*' },\n    row_level: { filters: [{ member: 'tenant', operator: 'equals', values: ['A'] }] } }],\n  dimensions: {\n    id: { sql: 'id', type: 'number', primary_key: true, public: true },\n    tenant: { sql: 'tenant', type: 'string' },\n    observed_at: { sql: 'observed_at', type: 'time' },\n    channel: { sql: 'channel', type: 'string' },\n    score: { sql: 'score', type: 'number' },\n    region: { sql: 'region', type: 'string' },\n    status: { sql: 'status', type: 'string' },\n    flag: { sql: 'flag', type: 'boolean' }\n  },\n  measures: { count: { type: 'count' } },\n  segments: { web: { sql: \"channel = 'web'\" } }\n});",
+  "setupSQL": "CREATE SCHEMA cssql_oracle;\n\n  CREATE TABLE cssql_oracle.analytics_boolean_origins (\n    id integer PRIMARY KEY, tenant text NOT NULL, observed_at timestamp NOT NULL,\n    channel text NOT NULL, score integer NOT NULL, region text, status text, flag boolean\n  );\n  INSERT INTO cssql_oracle.analytics_boolean_origins VALUES\n    (1,'A','2024-03-15','web',1,'A','incomplete',false),\n    (2,'A','2024-03-15','web',1,'B','completed',false),\n    (3,'A','2024-03-15','web',1,'A','completed',NULL),\n    (4,'A','2024-03-15','web',1,'B','incomplete',false),\n    (5,'A','2024-03-15','web',1,'A','incomplete',true),\n    (6,'A','2024-03-15','web',1,NULL,NULL,false),\n    (7,'B','2024-03-15','web',1,'A','incomplete',false),\n    (8,'A','2024-02-15','web',1,'A','incomplete',false),\n    (9,'A','2024-03-15','mobile',1,'A','incomplete',false),\n    (10,'A','2024-03-15','web',-1,'A','incomplete',false);\n",
+  "cases": [
+    {
+      "id": "MC11-01",
+      "query": "WITH base AS (\nSELECT\n  analytics_boolean_origins.id AS \"analytics_boolean_origins.id\", MEASURE(analytics_boolean_origins.count) AS \"analytics_boolean_origins.count\"\n  FROM analytics_boolean_origins\n  WHERE (analytics_boolean_origins.observed_at >= '2024-03-01' AND analytics_boolean_origins.observed_at <= '2024-03-31') AND (analytics_boolean_origins.region = 'A' OR analytics_boolean_origins.status = 'completed') AND analytics_boolean_origins.web IS TRUE AND NOT(analytics_boolean_origins.flag = TRUE) AND analytics_boolean_origins.score >= 0\n  GROUP BY 1\n)\nSELECT\n  base.\"analytics_boolean_origins.id\" AS \"analytics_boolean_origins.id\", base.\"analytics_boolean_origins.count\" AS \"analytics_boolean_origins.count\"\n  FROM base\n  ORDER BY \"analytics_boolean_origins.id\"\n  LIMIT 10",
+      "oracle": "-- oracle:mc11_boolean_tree_truth\nSELECT id, COUNT(*) AS count FROM cssql_oracle.analytics_boolean_origins\nWHERE tenant = 'A' AND observed_at >= '2024-03-01' AND observed_at < '2024-04-01'\n  AND channel = 'web' AND score >= 0\n  AND (region = 'A' OR status = 'completed') AND NOT(flag = TRUE)\nGROUP BY id ORDER BY id;",
+      "expectedIds": [
+        1,
+        2
+      ],
+      "expectedWrongIds": [
+        1,
+        2,
+        3
+      ]
+    },
+    {
+      "id": "MC11-02",
+      "query": "WITH base AS (\nSELECT\n  analytics_boolean_origins.id AS \"analytics_boolean_origins.id\", MEASURE(analytics_boolean_origins.count) AS \"analytics_boolean_origins.count\"\n  FROM analytics_boolean_origins\n  WHERE (analytics_boolean_origins.observed_at >= '2024-03-01' AND analytics_boolean_origins.observed_at <= '2024-03-31') AND analytics_boolean_origins.web IS TRUE AND NOT(analytics_boolean_origins.flag = TRUE) AND analytics_boolean_origins.score >= 0\n  GROUP BY 1\n)\nSELECT\n  base.\"analytics_boolean_origins.id\" AS \"analytics_boolean_origins.id\", base.\"analytics_boolean_origins.count\" AS \"analytics_boolean_origins.count\"\n  FROM base\n  ORDER BY \"analytics_boolean_origins.id\"\n  LIMIT 10",
+      "oracle": "-- oracle:mc11_whole_or_removal_truth\nSELECT id, COUNT(*) AS count FROM cssql_oracle.analytics_boolean_origins\nWHERE tenant = 'A' AND observed_at >= '2024-03-01' AND observed_at < '2024-04-01'\n  AND channel = 'web' AND score >= 0 AND NOT(flag = TRUE)\nGROUP BY id ORDER BY id;",
+      "expectedIds": [
+        1,
+        2,
+        4,
+        6
+      ],
+      "expectedWrongIds": [
+        1,
+        2,
+        3,
+        4,
+        6
+      ]
+    }
+  ]
+}

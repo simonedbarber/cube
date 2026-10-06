@@ -163,8 +163,10 @@ interface NormalizedQueryFilter extends QueryFilter {
 interface NormalizedQuery extends Query {
   filters?: NormalizedQueryFilter[];
   rowLimit?: null | number;
-  order?: { id: string; desc: boolean }[];
+  order?: { id: string; desc: boolean; nullsFirst?: boolean }[];
   maskedMembers?: { member: string; filter?: any }[];
+  /** Server-resolved policy origin; incoming requests cannot supply this. */
+  rowLevelFilters?: { cube: string; filter: QueryFilter | LogicalAndFilter | LogicalOrFilter }[];
 }
 
 export {

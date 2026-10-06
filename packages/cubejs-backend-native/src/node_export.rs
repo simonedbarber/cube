@@ -30,7 +30,7 @@ use cubenativeutils::wrappers::NativeContextHolder;
 use cubesqlplanner::cube_bridge::base_query_options::NativeBaseQueryOptions;
 use cubesqlplanner::planner::base_query::BaseQuery;
 use std::rc::Rc;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tokio::sync::oneshot;
 
 use cubesql::telemetry::LocalReporter;
@@ -44,8 +44,13 @@ use neon::result::Throw;
 #[cfg(not(feature = "async-log"))]
 use simple_logger::SimpleLogger;
 
+struct SQLInterfaceState {
+    services: Option<Arc<NodeCubeServices>>,
+    closing: bool,
+}
+
 pub(crate) struct SQLInterface {
-    pub(crate) services: Arc<NodeCubeServices>,
+    state: Arc<Mutex<SQLInterfaceState>>,
 }
 
 impl Finalize for SQLInterface {}
@@ -53,6 +58,7 @@ impl Finalize for SQLInterface {}
 #[derive(Serialize)]
 pub(crate) struct SchemaColumn {
     name: String,
+    #[serde(serialize_with = "cubesql::sql::dataframe::serialize_column_type")]
     column_type: ColumnType,
     #[serde(skip_serializing_if = "Option::is_none")]
     format: Option<serde_json::Value>,
@@ -62,7 +68,31 @@ pub(crate) struct SchemaColumn {
 
 impl SQLInterface {
     pub fn new(services: Arc<NodeCubeServices>) -> Self {
-        Self { services }
+        Self {
+            state: Arc::new(Mutex::new(SQLInterfaceState {
+                services: Some(services),
+                closing: false,
+            })),
+        }
+    }
+
+    pub(crate) fn services(
+        &self,
+        cx: &mut FunctionContext,
+    ) -> Result<Arc<NodeCubeServices>, Throw> {
+        let state = self.state.lock().unwrap();
+        match state.services.as_ref().filter(|_| !state.closing) {
+            Some(services) => Ok(services.clone()),
+            None => cx.throw_error("SQL interface has been shut down"),
+        }
+    }
+
+    fn begin_shutdown(&self) -> Option<Arc<NodeCubeServices>> {
+        let mut state = self.state.lock().unwrap();
+        // Deny new requests, but retain shutdown access until listeners have
+        // joined so a later fast shutdown can escalate an earlier smart one.
+        state.closing = true;
+        state.services.clone()
     }
 }
 
@@ -151,12 +181,18 @@ fn register_interface<C: NodeConfiguration>(mut cx: FunctionContext) -> JsResult
 
             log::debug!("Cube SQL Start");
 
-            let mut loops = services.spawn_processing_loops().await.unwrap();
-            loops.push(tokio::spawn(async move {
-                deferred.settle_with(&channel, move |mut cx| Ok(cx.boxed(interface)));
-
-                Ok(())
-            }));
+            let loops = services.spawn_processing_loops().await.unwrap();
+            // Shutdown must join the same loops that registration starts.
+            services
+                .services
+                .processing_loop_handles
+                .write()
+                .await
+                .extend(loops);
+            deferred
+                .settle_with(&channel, move |mut cx| Ok(cx.boxed(interface)))
+                .await
+                .unwrap();
         });
     });
 
@@ -177,11 +213,19 @@ fn shutdown_interface(mut cx: FunctionContext) -> JsResult<JsPromise> {
         }
     };
 
+    let services = match interface.begin_shutdown() {
+        Some(services) => services,
+        None => {
+            let (deferred, promise) = cx.promise();
+            let undefined = cx.undefined();
+            deferred.resolve(&mut cx, undefined);
+            return Ok(promise);
+        }
+    };
+    let state = interface.state.clone();
+    let runtime = tokio_runtime_node(&mut cx)?;
     let (deferred, promise) = cx.promise();
     let channel = cx.channel();
-
-    let services = interface.services.clone();
-    let runtime = tokio_runtime_node(&mut cx)?;
 
     runtime.spawn(async move {
         match services.stop_processing_loops(shutdown_mode).await {
@@ -190,6 +234,7 @@ fn shutdown_interface(mut cx: FunctionContext) -> JsResult<JsPromise> {
                     log::error!("Error during awaiting on shutdown: {}", err)
                 }
 
+                state.lock().unwrap().services.take();
                 deferred
                     .settle_with(&channel, move |mut cx| Ok(cx.undefined()))
                     .await
@@ -749,7 +794,7 @@ fn exec_sql(mut cx: FunctionContext) -> JsResult<JsValue> {
         .downcast_or_throw::<JsObject, _>(&mut cx)?
         .root(&mut cx);
 
-    let services = interface.services.clone();
+    let services = interface.services(&mut cx)?;
     let runtime = tokio_runtime_node(&mut cx)?;
 
     let channel = Arc::new(cx.channel());
@@ -889,8 +934,12 @@ pub fn setup_logger(mut cx: FunctionContext) -> JsResult<JsUndefined> {
     let logger = create_logger(log_level, prod_logger);
     log_reroute::reroute_boxed(Box::new(logger));
 
+    // The process-wide reporter outlives every SQL interface. Logging observes
+    // work owned by those interfaces and must not keep Node alive after shutdown.
+    let mut logger_channel = cx.channel();
+    logger_channel.unref(&mut cx);
     ReportingLogger::init(
-        Box::new(NodeBridgeLogger::new(cx.channel(), cube_logger)),
+        Box::new(NodeBridgeLogger::new(logger_channel, cube_logger)),
         log_level.to_level_filter(),
     )
     .unwrap();

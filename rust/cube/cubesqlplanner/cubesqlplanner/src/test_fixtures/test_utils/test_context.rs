@@ -543,6 +543,7 @@ impl TestContext {
                 .convert_tz_for_raw_time_dimension(yaml_options.convert_tz_for_raw_time_dimension)
                 .member_to_alias(yaml_options.member_to_alias)
                 .masked_members(yaml_options.masked_members)
+                .row_level_filters(yaml_options.row_level_filters)
                 .timezone(yaml_options.timezone)
                 .build(),
         )

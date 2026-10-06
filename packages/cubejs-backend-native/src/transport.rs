@@ -216,7 +216,7 @@ impl TransportService for NodeBridgeTransport {
             member_to_data_source,
             data_source_to_sql_generator,
             compiler_id,
-        )))
+        )?))
     }
 
     async fn compiler_id(&self, ctx: AuthContextRef) -> Result<Uuid, CubeError> {

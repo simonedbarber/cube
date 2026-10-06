@@ -19,6 +19,7 @@ export interface BaseMeta {
 }
 
 export interface LoadRequestMeta extends BaseMeta {
+  sqlOrderNullsFirst?: boolean[];
   // Security Context switching
   changeUser?: string,
 }
@@ -283,14 +284,31 @@ function wrapNativeFunctionWithStream(
   );
   return async (extra: any, writerOrChannel: any) => {
     let response: any;
+    let writable: Writable | undefined;
+    let cancelled = false;
 
     try {
+      writerOrChannel.onCancel?.(() => {
+        // A normal consumer drops its receiver after the final chunk too.
+        if (response?.stream?.readableEnded) {
+          return;
+        }
+        cancelled = true;
+        writable?.destroy();
+        response?.stream?.destroy();
+      });
       response = await fn(JSON.parse(extra));
+      // The close notification is queued on Node's event loop. Check the
+      // receiver synchronously too before starting a late callback result.
+      if (cancelled || writerOrChannel.isCancelled?.()) {
+        response?.stream?.destroy();
+        return;
+      }
       if (response && response.stream) {
         writerOrChannel.start();
 
         const chunkBuilder = new ColumnarChunkBuilder(chunkLength);
-        const writable = new Writable({
+        writable = new Writable({
           objectMode: true,
           highWaterMark: chunkLength,
           write(row: any, encoding: BufferEncoding, callback: (error?: (Error | null)) => void) {
@@ -320,16 +338,18 @@ function wrapNativeFunctionWithStream(
             }
           },
           destroy(error: Error | null, callback: (error: (Error | null)) => void) {
+            response.stream.unpipe(this);
+            response.stream.destroy(error || undefined);
             if (error) {
               writerOrChannel.reject(errorString(error));
             }
             callback(null);
           },
         });
-        response.stream.pipe(writable);
         response.stream.on('error', (err: any) => {
-          writable.destroy(err);
+          writable!.destroy(err);
         });
+        response.stream.pipe(writable);
       } else if (response.error) {
         writerOrChannel.reject(errorString(response));
       } else if (response.isWrapper) { // Native wrapped result

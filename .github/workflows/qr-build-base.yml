@@ -25,7 +25,23 @@ on:
     paths:
       - 'packages/cubejs-docker/qr-base.Dockerfile'
       - '.dockerignore'
+      - 'package.json'
+      - 'yarn.lock'
+      - 'lerna.json'
+      - 'rollup.config.js'
+      - 'tsconfig*.json'
       - 'packages/cubejs-backend-native/**'
+      - 'packages/cubejs-api-gateway/**'
+      - 'packages/cubejs-server-core/**'
+      - 'packages/cubejs-query-orchestrator/**'
+      - 'packages/cubejs-postgres-driver/**'
+      - 'packages/cubejs-schema-compiler/**'
+      - 'packages/cubejs-duckdb-driver/**'
+      - 'packages/cubejs-druid-driver/**'
+      - 'packages/cubejs-firebolt-driver/**'
+      - 'packages/cubejs-pinot-driver/**'
+      - 'packages/cubejs-ksql-driver/**'
+      - 'packages/cubejs-base-driver/**'
       - 'rust/cubesql/**'
       - 'rust/cube/**'
       - '.github/workflows/qr-build-base.yml'
@@ -36,7 +52,23 @@ on:
     paths:
       - 'packages/cubejs-docker/qr-base.Dockerfile'
       - '.dockerignore'
+      - 'package.json'
+      - 'yarn.lock'
+      - 'lerna.json'
+      - 'rollup.config.js'
+      - 'tsconfig*.json'
       - 'packages/cubejs-backend-native/**'
+      - 'packages/cubejs-api-gateway/**'
+      - 'packages/cubejs-server-core/**'
+      - 'packages/cubejs-query-orchestrator/**'
+      - 'packages/cubejs-postgres-driver/**'
+      - 'packages/cubejs-schema-compiler/**'
+      - 'packages/cubejs-duckdb-driver/**'
+      - 'packages/cubejs-druid-driver/**'
+      - 'packages/cubejs-firebolt-driver/**'
+      - 'packages/cubejs-pinot-driver/**'
+      - 'packages/cubejs-ksql-driver/**'
+      - 'packages/cubejs-base-driver/**'
       - 'rust/cubesql/**'
       - 'rust/cube/**'
       - '.github/workflows/qr-build-base.yml'
@@ -59,6 +91,10 @@ jobs:
     steps:
       - name: Checkout fork
         uses: actions/checkout@v4
+        with:
+          # Build the exact revision used by the immutable tag and OCI label.
+          # The default PR checkout is GitHub's synthetic merge commit.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Free space for native compilation
         uses: ./.github/actions/maximize-build-space

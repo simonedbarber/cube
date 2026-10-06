@@ -47,6 +47,10 @@ impl<'a> LogicalNodeProcessor<'a, MultiStageGetDateRange> for MultiStageGetDateR
             &references_builder,
             &mut context_factory,
         )?;
+        let filter = get_date_range.filter.all_filters();
+        references_builder
+            .resolve_references_for_filter(&filter, context_factory.render_references_mut())?;
+        select_builder.set_filter(filter);
         let select = Rc::new(select_builder.build(query_tools.clone(), context_factory));
         Ok(QueryPlan::Select(select))
     }

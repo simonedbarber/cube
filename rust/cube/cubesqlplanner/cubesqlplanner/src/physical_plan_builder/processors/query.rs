@@ -66,8 +66,34 @@ impl<'a> LogicalNodeProcessor<'a, Query> for QueryProcessor<'a> {
             }
         }
 
-        let from = self.builder.process_node(logical_plan.source(), &context)?;
         let mut filter = logical_plan.filter().all_filters();
+        context.row_level_join_filters = None;
+        // Move only current protected input constraints in a plain row source.
+        // CubeSQL's dimension-only GROUP BY (including a canonical LOOKUP CASE)
+        // deduplicates that source and does not set `ungrouped`. Its input
+        // visibility must be established before deduplication too. Measures,
+        // rollups, multi-stage sources and transformed filter trees keep their
+        // existing globally enforced constraint until separately owned.
+        let dimension_projection = logical_plan.schema().measures.is_empty()
+            && logical_plan.schema().time_dimensions.is_empty()
+            && logical_plan.filter().measures_filter().is_none();
+        if (logical_plan.modifers().ungrouped || dimension_projection)
+            && context.multi_stage_dimensions.is_empty()
+            && !context.measure_subquery
+            && !context.dimensions_query
+            && !context.render_measure_for_ungrouped
+            && context.time_shifts.dimensions_shifts.is_empty()
+            && context.original_sql_pre_aggregations.is_empty()
+        {
+            if let QuerySource::LogicalJoin(join) = logical_plan.source() {
+                if let Some(protected) = query_tools.row_level_filters() {
+                    if protected.place_for_join(join, &mut filter) {
+                        context.row_level_join_filters = Some(protected);
+                    }
+                }
+            }
+        }
+        let from = self.builder.process_node(logical_plan.source(), &context)?;
         let mut having = logical_plan.filter().measures_filter();
 
         // Calc-group dimensions are resolved at query time: a value pinned by
@@ -274,10 +300,7 @@ impl<'a> LogicalNodeProcessor<'a, Query> for QueryProcessor<'a> {
                     if !schema.find_member_positions(&o.name()).is_empty() {
                         return Ok(o.clone());
                     }
-                    Ok(OrderByItem::new(
-                        transforms::measures_render_modifier(&o.member_symbol(), modifier)?,
-                        o.desc(),
-                    ))
+                    order_by_with_measure_modifier(o, modifier)
                 })
                 .collect::<Result<Vec<_>, _>>()?
         } else {
@@ -292,4 +315,51 @@ impl<'a> LogicalNodeProcessor<'a, Query> for QueryProcessor<'a> {
 
 impl ProcessableNode for Query {
     type ProcessorType<'a> = QueryProcessor<'a>;
+}
+
+/// Hidden modeled order measures need the same render modifier as the query,
+/// while retaining the original direction and private SQL null placement.
+fn order_by_with_measure_modifier(
+    order: &OrderByItem,
+    modifier: &MeasureRenderModifier,
+) -> Result<OrderByItem, CubeError> {
+    Ok(OrderByItem::new(
+        transforms::measures_render_modifier(&order.member_symbol(), modifier)?,
+        order.desc(),
+    )
+    .with_nulls_first(order.nulls_first()))
+}
+
+#[cfg(test)]
+mod hidden_measure_order_tests {
+    use super::*;
+    use crate::test_fixtures::cube_bridge::MockSchema;
+    use crate::test_fixtures::test_utils::TestContext;
+
+    #[test]
+    fn hidden_measure_modifier_preserves_null_placement_and_direction() {
+        let schema = MockSchema::from_yaml_file("common/symbol_transforms.yaml");
+        let ctx = TestContext::new(schema).unwrap();
+        let measure = ctx.create_measure("events.count").unwrap();
+        for modifier in [
+            MeasureRenderModifier::RawValue,
+            MeasureRenderModifier::UngroupedFinal,
+        ] {
+            for desc in [false, true] {
+                for placement in [None, Some(true), Some(false)] {
+                    let input = OrderByItem::new(measure.clone(), desc).with_nulls_first(placement);
+                    let output = order_by_with_measure_modifier(&input, &modifier).unwrap();
+                    assert_eq!(output.name(), input.name());
+                    assert_eq!(output.desc(), desc);
+                    assert_eq!(output.nulls_first(), placement);
+                    assert!(output
+                        .member_symbol()
+                        .as_measure()
+                        .unwrap()
+                        .render_modifier()
+                        .is_some());
+                }
+            }
+        }
+    }
 }

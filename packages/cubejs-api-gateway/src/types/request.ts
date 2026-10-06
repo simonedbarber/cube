@@ -128,6 +128,8 @@ type RequestQuery = Record<string, any> | Record<string, any>[] & {
  * Data query HTTP request parameters map data type.
  */
 type QueryRequest = BaseRequest & {
+  /** Private SQL transport, not an editable REST query field. */
+  sqlOrderNullsFirst?: boolean[];
   query: RequestQuery;
   queryType?: RequestType;
   apiType?: ApiType;
@@ -152,6 +154,7 @@ type QueryConvertRequest = BaseRequest & {
 };
 
 type SqlApiRequest = BaseRequest & {
+  sqlOrderNullsFirst?: boolean[];
   query: Record<string, any>;
   sqlQuery?: [string, string[]];
   apiType?: ApiType;

@@ -38,7 +38,7 @@ impl OrderPlanner {
                     Expr::Member(MemberExpression::new(found_item.1.clone())),
                     found_item.0 + 1,
                     itm.desc(),
-                ));
+                ).with_nulls_first(itm.nulls_first()));
             }
         }
         result

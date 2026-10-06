@@ -154,6 +154,13 @@ pub struct MaskedMemberItem {
     pub filter: Option<FilterItem>,
 }
 
+/// Current server-resolved policy origin. This is not a public query option.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct RowLevelFilterItem {
+    pub cube: String,
+    pub filter: FilterItem,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct TimeDimension {
     pub dimension: String,
@@ -176,6 +183,8 @@ pub struct FilterItem {
 pub struct OrderByItem {
     pub id: String,
     pub desc: Option<bool>,
+    #[serde(rename = "nullsFirst", default)]
+    pub nulls_first: Option<bool>,
 }
 
 impl OrderByItem {
@@ -222,6 +231,8 @@ pub struct BaseQueryOptionsStatic {
     pub convert_tz_for_raw_time_dimension: Option<bool>,
     #[serde(rename = "maskedMembers")]
     pub masked_members: Option<Vec<MaskedMemberItem>>,
+    #[serde(rename = "rowLevelFilters")]
+    pub row_level_filters: Option<Vec<RowLevelFilterItem>>,
     #[serde(rename = "memberToAlias", default)]
     pub member_to_alias: Option<HashMap<String, String>>,
 }

@@ -243,7 +243,7 @@ impl PhysicalPlanBuilder {
                     Expr::Member(MemberExpression::new(o.member_symbol())),
                     0,
                     o.desc(),
-                ));
+                ).with_nulls_first(o.nulls_first()));
             } else {
                 for position in positions {
                     // Use the symbol from schema at the found position instead of
@@ -256,7 +256,7 @@ impl PhysicalPlanBuilder {
                         Expr::Member(MemberExpression::new(symbol)),
                         position + 1,
                         o.desc(),
-                    ));
+                    ).with_nulls_first(o.nulls_first()));
                 }
             }
         }

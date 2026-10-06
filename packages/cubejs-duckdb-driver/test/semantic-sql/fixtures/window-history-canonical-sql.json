@@ -1,0 +1,891 @@
+{
+  "description": "Exact private production lowering with independent source window oracles. Public admission remains refused; no application authority/cache or lifecycle/performance qualification.",
+  "emissionRevision": 3,
+  "configuredK": 50000,
+  "population": 60001,
+  "axis": "analytics_window_history.created_at",
+  "region": "analytics_window_history.region",
+  "modelSource": "cube('analytics_window_history', { sql: \"SELECT * FROM analytics_window_history WHERE id <> -8\", access_policy: [\n  { group: 'analyst', member_level: { includes: '*' }, row_level: { filters: [{ member: 'region', operator: 'equals', values: ['A'] }] } },\n  { group: 'auditor', member_level: { includes: '*' }, row_level: { allow_all: true } } ],\n  dimensions: { id: { sql: 'id', type: 'number', primaryKey: true }, created_at: { sql: 'created_at', type: 'time' }, clipped_at: { sql: 'created_at', type: 'time' },\n  region: { sql: 'region', type: 'string' }, status: { sql: 'status', type: 'string' }, amount: { sql: 'amount', type: 'number' } } });",
+  "setupSQL": "CREATE TABLE analytics_window_history(id integer PRIMARY KEY, region VARCHAR, status VARCHAR, amount DECIMAL(18,3), created_at TIMESTAMP);\nINSERT INTO analytics_window_history VALUES (-1,'A','paid',10,'2024-01-02'),(-2,'A','paid',30,'2024-03-02'),(-3,'A','paid',40,'2024-04-02'),\n(-4,'A','unpaid',900,'2024-01-02'),(-5,NULL,'paid',5,'2024-01-02'),(-6,NULL,'paid',7,'2024-03-02'),\n(-7,'history-only','paid',100,'2024-01-02'),(-8,'A','paid',9000,'2024-01-02'),(-9,'all-null','paid',NULL,'2024-01-02'),(-10,'all-null','paid',NULL,'2024-03-02');\nINSERT INTO analytics_window_history SELECT id,'large','paid',1,TIMESTAMP '2020-01-01' + id * INTERVAL '1 second' FROM generate_series(1,60001) source(id);",
+  "cases": [
+    {
+      "id": "SPARSE-NULL",
+      "principal": "auditor",
+      "authoredQuery": {
+        "dimensions": [
+          "analytics_window_history.region"
+        ],
+        "timeDimensions": [
+          {
+            "dimension": "analytics_window_history.created_at",
+            "granularity": "month",
+            "dateRange": [
+              "2024-03-01T00:00:00Z",
+              "2024-05-01T00:00:00Z"
+            ]
+          }
+        ],
+        "calculations": [
+          {
+            "kind": "aggregate",
+            "id": "base",
+            "agg": "sum",
+            "expr": {
+              "t": "col",
+              "member": "analytics_window_history.amount"
+            }
+          }
+        ],
+        "measures": [
+          {
+            "kind": "window",
+            "id": "running",
+            "fn": "running",
+            "agg": "sum",
+            "input": "base",
+            "order": [
+              {
+                "id": "analytics_window_history.created_at"
+              }
+            ],
+            "partition": [
+              "analytics_window_history.region"
+            ],
+            "history": {
+              "inputRange": [
+                "2024-01-01T00:00:00Z",
+                "2024-05-01T00:00:00Z"
+              ]
+            }
+          }
+        ],
+        "filters": [
+          {
+            "id": "schedule-paid",
+            "origin": "schedule",
+            "member": "analytics_window_history.status",
+            "operator": "equals",
+            "values": [
+              "paid"
+            ]
+          }
+        ],
+        "resultOps": {
+          "sort": [
+            {
+              "id": "analytics_window_history.region"
+            },
+            {
+              "id": "analytics_window_history.created_at"
+            }
+          ]
+        },
+        "limit": 4
+      },
+      "expected": [
+        [
+          "A",
+          "2024-03",
+          40
+        ],
+        [
+          "A",
+          "2024-04",
+          80
+        ],
+        [
+          "all-null",
+          "2024-03",
+          null
+        ],
+        [
+          null,
+          "2024-03",
+          12
+        ]
+      ],
+      "oracle": "WITH grouped AS (SELECT region, DATE_TRUNC('month',created_at) bucket,SUM(amount) amount FROM analytics_window_history\nWHERE id <> -8 AND status='paid' AND created_at >= TIMESTAMP '2024-01-01' AND created_at <= TIMESTAMP '2024-05-01'  GROUP BY 1,2),\nhistory AS (SELECT region,bucket,SUM(amount) OVER (PARTITION BY region ORDER BY bucket ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) running FROM grouped)\nSELECT region,bucket,running FROM history WHERE bucket >= TIMESTAMP '2024-03-01' AND bucket <= TIMESTAMP '2024-05-01'  ORDER BY region ASC NULLS LAST,bucket ASC LIMIT 4",
+      "large": false,
+      "query": "WITH visible_base AS (\nSELECT\n  analytics_window_history.region AS \"analytics_window_history.region\", DATE_TRUNC('month', analytics_window_history.created_at) AS \"analytics_window_history.created_at\", SUM(analytics_window_history.amount) AS \"base\"\n  FROM analytics_window_history\n  WHERE (analytics_window_history.created_at >= '2024-03-01T00:00:00Z' AND analytics_window_history.created_at <= '2024-05-01T00:00:00Z') AND analytics_window_history.status = 'paid'\n  GROUP BY 1, 2\n),\nwindow_history AS (\nSELECT\n  analytics_window_history.region AS \"analytics_window_history.region\", DATE_TRUNC('month', analytics_window_history.created_at) AS \"analytics_window_history.created_at\", SUM(SUM(analytics_window_history.amount)) OVER (PARTITION BY analytics_window_history.region ORDER BY DATE_TRUNC('month', analytics_window_history.created_at) ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS \"running\"\n  FROM analytics_window_history\n  WHERE (analytics_window_history.created_at >= '2024-01-01T00:00:00Z' AND analytics_window_history.created_at <= '2024-05-01T00:00:00Z') AND analytics_window_history.status = 'paid'\n  GROUP BY 1, 2\n),\njoin_keys AS (\nSELECT\n  visible_base.\"analytics_window_history.region\" AS \"analytics_window_history.region\", visible_base.\"analytics_window_history.created_at\" AS \"analytics_window_history.created_at\", visible_base.\"base\" AS \"base\", COALESCE(CAST(visible_base.\"analytics_window_history.region\" AS VARCHAR), '') AS \"__join_value_0\", (visible_base.\"analytics_window_history.region\" IS NULL) AS \"__join_null_0\", COALESCE(CAST(visible_base.\"analytics_window_history.created_at\" AS VARCHAR), '') AS \"__join_value_1\", (visible_base.\"analytics_window_history.created_at\" IS NULL) AS \"__join_null_1\"\n  FROM visible_base\n),\njoin_keys_2 AS (\nSELECT\n  window_history.\"analytics_window_history.region\" AS \"analytics_window_history.region\", window_history.\"analytics_window_history.created_at\" AS \"analytics_window_history.created_at\", window_history.\"running\" AS \"running\", COALESCE(CAST(window_history.\"analytics_window_history.region\" AS VARCHAR), '') AS \"__join_value_0\", (window_history.\"analytics_window_history.region\" IS NULL) AS \"__join_null_0\", COALESCE(CAST(window_history.\"analytics_window_history.created_at\" AS VARCHAR), '') AS \"__join_value_1\", (window_history.\"analytics_window_history.created_at\" IS NULL) AS \"__join_null_1\"\n  FROM window_history\n),\nhistory_attached AS (\nSELECT\n  visible.\"analytics_window_history.region\" AS \"analytics_window_history.region\", visible.\"analytics_window_history.created_at\" AS \"analytics_window_history.created_at\", visible.\"base\" AS \"base\", history.\"running\" AS \"running\"\n  FROM join_keys visible LEFT JOIN join_keys_2 history ON visible.\"__join_value_0\" = history.\"__join_value_0\" AND visible.\"__join_null_0\" = history.\"__join_null_0\" AND visible.\"__join_value_1\" = history.\"__join_value_1\" AND visible.\"__join_null_1\" = history.\"__join_null_1\"\n)\nSELECT\n  history_attached.\"analytics_window_history.region\" AS \"analytics_window_history.region\", history_attached.\"analytics_window_history.created_at\" AS \"analytics_window_history.created_at\", history_attached.\"running\" AS \"running\"\n  FROM history_attached\n  ORDER BY history_attached.\"analytics_window_history.region\" ASC, history_attached.\"analytics_window_history.created_at\" ASC\n  LIMIT 4"
+    },
+    {
+      "id": "SOURCE-CLIPPING",
+      "principal": "auditor",
+      "authoredQuery": {
+        "dimensions": [
+          "analytics_window_history.region"
+        ],
+        "timeDimensions": [
+          {
+            "dimension": "analytics_window_history.created_at",
+            "granularity": "month",
+            "dateRange": [
+              "2024-03-01T00:00:00Z",
+              "2024-05-01T00:00:00Z"
+            ]
+          }
+        ],
+        "calculations": [
+          {
+            "kind": "aggregate",
+            "id": "base",
+            "agg": "sum",
+            "expr": {
+              "t": "col",
+              "member": "analytics_window_history.amount"
+            }
+          }
+        ],
+        "measures": [
+          {
+            "kind": "window",
+            "id": "running",
+            "fn": "running",
+            "agg": "sum",
+            "input": "base",
+            "order": [
+              {
+                "id": "analytics_window_history.created_at"
+              }
+            ],
+            "partition": [
+              "analytics_window_history.region"
+            ],
+            "history": {
+              "inputRange": [
+                "2024-01-01T00:00:00Z",
+                "2024-05-01T00:00:00Z"
+              ]
+            }
+          }
+        ],
+        "filters": [
+          {
+            "member": "analytics_window_history.status",
+            "operator": "equals",
+            "values": [
+              "paid"
+            ]
+          },
+          {
+            "member": "analytics_window_history.created_at",
+            "operator": "beforeDate",
+            "values": [
+              "2024-04-01T00:00:00Z"
+            ]
+          }
+        ],
+        "resultOps": {
+          "sort": [
+            {
+              "id": "analytics_window_history.region"
+            },
+            {
+              "id": "analytics_window_history.created_at"
+            }
+          ]
+        },
+        "limit": 4
+      },
+      "expected": [
+        [
+          "A",
+          "2024-03",
+          40
+        ],
+        [
+          "all-null",
+          "2024-03",
+          null
+        ],
+        [
+          null,
+          "2024-03",
+          12
+        ]
+      ],
+      "oracle": "WITH grouped AS (SELECT region, DATE_TRUNC('month',created_at) bucket,SUM(amount) amount FROM analytics_window_history\nWHERE id <> -8 AND status='paid' AND created_at >= TIMESTAMP '2024-01-01' AND created_at <= TIMESTAMP '2024-05-01' AND created_at < TIMESTAMP '2024-04-01' GROUP BY 1,2),\nhistory AS (SELECT region,bucket,SUM(amount) OVER (PARTITION BY region ORDER BY bucket ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) running FROM grouped)\nSELECT region,bucket,running FROM history WHERE bucket >= TIMESTAMP '2024-03-01' AND bucket <= TIMESTAMP '2024-05-01'  ORDER BY region ASC NULLS LAST,bucket ASC LIMIT 4",
+      "large": false,
+      "query": "WITH visible_base AS (\nSELECT\n  analytics_window_history.region AS \"analytics_window_history.region\", DATE_TRUNC('month', analytics_window_history.created_at) AS \"analytics_window_history.created_at\", SUM(analytics_window_history.amount) AS \"base\"\n  FROM analytics_window_history\n  WHERE (analytics_window_history.created_at >= '2024-03-01T00:00:00Z' AND analytics_window_history.created_at <= '2024-05-01T00:00:00Z') AND analytics_window_history.status = 'paid' AND analytics_window_history.created_at < '2024-04-01T00:00:00Z'\n  GROUP BY 1, 2\n),\nwindow_history AS (\nSELECT\n  analytics_window_history.region AS \"analytics_window_history.region\", DATE_TRUNC('month', analytics_window_history.created_at) AS \"analytics_window_history.created_at\", SUM(SUM(analytics_window_history.amount)) OVER (PARTITION BY analytics_window_history.region ORDER BY DATE_TRUNC('month', analytics_window_history.created_at) ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS \"running\"\n  FROM analytics_window_history\n  WHERE (analytics_window_history.created_at >= '2024-01-01T00:00:00Z' AND analytics_window_history.created_at <= '2024-05-01T00:00:00Z') AND analytics_window_history.status = 'paid' AND analytics_window_history.created_at < '2024-04-01T00:00:00Z'\n  GROUP BY 1, 2\n),\njoin_keys AS (\nSELECT\n  visible_base.\"analytics_window_history.region\" AS \"analytics_window_history.region\", visible_base.\"analytics_window_history.created_at\" AS \"analytics_window_history.created_at\", visible_base.\"base\" AS \"base\", COALESCE(CAST(visible_base.\"analytics_window_history.region\" AS VARCHAR), '') AS \"__join_value_0\", (visible_base.\"analytics_window_history.region\" IS NULL) AS \"__join_null_0\", COALESCE(CAST(visible_base.\"analytics_window_history.created_at\" AS VARCHAR), '') AS \"__join_value_1\", (visible_base.\"analytics_window_history.created_at\" IS NULL) AS \"__join_null_1\"\n  FROM visible_base\n),\njoin_keys_2 AS (\nSELECT\n  window_history.\"analytics_window_history.region\" AS \"analytics_window_history.region\", window_history.\"analytics_window_history.created_at\" AS \"analytics_window_history.created_at\", window_history.\"running\" AS \"running\", COALESCE(CAST(window_history.\"analytics_window_history.region\" AS VARCHAR), '') AS \"__join_value_0\", (window_history.\"analytics_window_history.region\" IS NULL) AS \"__join_null_0\", COALESCE(CAST(window_history.\"analytics_window_history.created_at\" AS VARCHAR), '') AS \"__join_value_1\", (window_history.\"analytics_window_history.created_at\" IS NULL) AS \"__join_null_1\"\n  FROM window_history\n),\nhistory_attached AS (\nSELECT\n  visible.\"analytics_window_history.region\" AS \"analytics_window_history.region\", visible.\"analytics_window_history.created_at\" AS \"analytics_window_history.created_at\", visible.\"base\" AS \"base\", history.\"running\" AS \"running\"\n  FROM join_keys visible LEFT JOIN join_keys_2 history ON visible.\"__join_value_0\" = history.\"__join_value_0\" AND visible.\"__join_null_0\" = history.\"__join_null_0\" AND visible.\"__join_value_1\" = history.\"__join_value_1\" AND visible.\"__join_null_1\" = history.\"__join_null_1\"\n)\nSELECT\n  history_attached.\"analytics_window_history.region\" AS \"analytics_window_history.region\", history_attached.\"analytics_window_history.created_at\" AS \"analytics_window_history.created_at\", history_attached.\"running\" AS \"running\"\n  FROM history_attached\n  ORDER BY history_attached.\"analytics_window_history.region\" ASC, history_attached.\"analytics_window_history.created_at\" ASC\n  LIMIT 4"
+    },
+    {
+      "id": "RESULT-FILTER",
+      "principal": "auditor",
+      "authoredQuery": {
+        "dimensions": [
+          "analytics_window_history.region"
+        ],
+        "timeDimensions": [
+          {
+            "dimension": "analytics_window_history.created_at",
+            "granularity": "month",
+            "dateRange": [
+              "2024-03-01T00:00:00Z",
+              "2024-05-01T00:00:00Z"
+            ]
+          }
+        ],
+        "calculations": [
+          {
+            "kind": "aggregate",
+            "id": "base",
+            "agg": "sum",
+            "expr": {
+              "t": "col",
+              "member": "analytics_window_history.amount"
+            }
+          }
+        ],
+        "measures": [
+          {
+            "kind": "window",
+            "id": "running",
+            "fn": "running",
+            "agg": "sum",
+            "input": "base",
+            "order": [
+              {
+                "id": "analytics_window_history.created_at"
+              }
+            ],
+            "partition": [
+              "analytics_window_history.region"
+            ],
+            "history": {
+              "inputRange": [
+                "2024-01-01T00:00:00Z",
+                "2024-05-01T00:00:00Z"
+              ]
+            }
+          }
+        ],
+        "filters": [
+          {
+            "id": "schedule-paid",
+            "origin": "schedule",
+            "member": "analytics_window_history.status",
+            "operator": "equals",
+            "values": [
+              "paid"
+            ]
+          }
+        ],
+        "resultOps": {
+          "filters": [
+            {
+              "member": "running",
+              "operator": "gt",
+              "values": [
+                "45"
+              ]
+            }
+          ],
+          "sort": [
+            {
+              "id": "analytics_window_history.region"
+            },
+            {
+              "id": "analytics_window_history.created_at"
+            }
+          ]
+        },
+        "limit": 4
+      },
+      "expected": [
+        [
+          "A",
+          "2024-04",
+          80
+        ]
+      ],
+      "oracle": "WITH grouped AS (SELECT region, DATE_TRUNC('month',created_at) bucket,SUM(amount) amount FROM analytics_window_history\nWHERE id <> -8 AND status='paid' AND created_at >= TIMESTAMP '2024-01-01' AND created_at <= TIMESTAMP '2024-05-01'  GROUP BY 1,2),\nhistory AS (SELECT region,bucket,SUM(amount) OVER (PARTITION BY region ORDER BY bucket ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) running FROM grouped)\nSELECT region,bucket,running FROM history WHERE bucket >= TIMESTAMP '2024-03-01' AND bucket <= TIMESTAMP '2024-05-01' AND running > 45 ORDER BY region ASC NULLS LAST,bucket ASC LIMIT 4",
+      "large": false,
+      "query": "WITH visible_base AS (\nSELECT\n  analytics_window_history.region AS \"analytics_window_history.region\", DATE_TRUNC('month', analytics_window_history.created_at) AS \"analytics_window_history.created_at\", SUM(analytics_window_history.amount) AS \"base\"\n  FROM analytics_window_history\n  WHERE (analytics_window_history.created_at >= '2024-03-01T00:00:00Z' AND analytics_window_history.created_at <= '2024-05-01T00:00:00Z') AND analytics_window_history.status = 'paid'\n  GROUP BY 1, 2\n),\nwindow_history AS (\nSELECT\n  analytics_window_history.region AS \"analytics_window_history.region\", DATE_TRUNC('month', analytics_window_history.created_at) AS \"analytics_window_history.created_at\", SUM(SUM(analytics_window_history.amount)) OVER (PARTITION BY analytics_window_history.region ORDER BY DATE_TRUNC('month', analytics_window_history.created_at) ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS \"running\"\n  FROM analytics_window_history\n  WHERE (analytics_window_history.created_at >= '2024-01-01T00:00:00Z' AND analytics_window_history.created_at <= '2024-05-01T00:00:00Z') AND analytics_window_history.status = 'paid'\n  GROUP BY 1, 2\n),\njoin_keys AS (\nSELECT\n  visible_base.\"analytics_window_history.region\" AS \"analytics_window_history.region\", visible_base.\"analytics_window_history.created_at\" AS \"analytics_window_history.created_at\", visible_base.\"base\" AS \"base\", COALESCE(CAST(visible_base.\"analytics_window_history.region\" AS VARCHAR), '') AS \"__join_value_0\", (visible_base.\"analytics_window_history.region\" IS NULL) AS \"__join_null_0\", COALESCE(CAST(visible_base.\"analytics_window_history.created_at\" AS VARCHAR), '') AS \"__join_value_1\", (visible_base.\"analytics_window_history.created_at\" IS NULL) AS \"__join_null_1\"\n  FROM visible_base\n),\njoin_keys_2 AS (\nSELECT\n  window_history.\"analytics_window_history.region\" AS \"analytics_window_history.region\", window_history.\"analytics_window_history.created_at\" AS \"analytics_window_history.created_at\", window_history.\"running\" AS \"running\", COALESCE(CAST(window_history.\"analytics_window_history.region\" AS VARCHAR), '') AS \"__join_value_0\", (window_history.\"analytics_window_history.region\" IS NULL) AS \"__join_null_0\", COALESCE(CAST(window_history.\"analytics_window_history.created_at\" AS VARCHAR), '') AS \"__join_value_1\", (window_history.\"analytics_window_history.created_at\" IS NULL) AS \"__join_null_1\"\n  FROM window_history\n),\nhistory_attached AS (\nSELECT\n  visible.\"analytics_window_history.region\" AS \"analytics_window_history.region\", visible.\"analytics_window_history.created_at\" AS \"analytics_window_history.created_at\", visible.\"base\" AS \"base\", history.\"running\" AS \"running\"\n  FROM join_keys visible LEFT JOIN join_keys_2 history ON visible.\"__join_value_0\" = history.\"__join_value_0\" AND visible.\"__join_null_0\" = history.\"__join_null_0\" AND visible.\"__join_value_1\" = history.\"__join_value_1\" AND visible.\"__join_null_1\" = history.\"__join_null_1\"\n)\nSELECT\n  history_attached.\"analytics_window_history.region\" AS \"analytics_window_history.region\", history_attached.\"analytics_window_history.created_at\" AS \"analytics_window_history.created_at\", history_attached.\"running\" AS \"running\"\n  FROM history_attached\n  WHERE history_attached.\"running\" > '45'\n  ORDER BY history_attached.\"analytics_window_history.region\" ASC, history_attached.\"analytics_window_history.created_at\" ASC\n  LIMIT 4"
+    },
+    {
+      "id": "PAGE",
+      "principal": "auditor",
+      "authoredQuery": {
+        "dimensions": [
+          "analytics_window_history.region"
+        ],
+        "timeDimensions": [
+          {
+            "dimension": "analytics_window_history.created_at",
+            "granularity": "month",
+            "dateRange": [
+              "2024-03-01T00:00:00Z",
+              "2024-05-01T00:00:00Z"
+            ]
+          }
+        ],
+        "calculations": [
+          {
+            "kind": "aggregate",
+            "id": "base",
+            "agg": "sum",
+            "expr": {
+              "t": "col",
+              "member": "analytics_window_history.amount"
+            }
+          }
+        ],
+        "measures": [
+          {
+            "kind": "window",
+            "id": "running",
+            "fn": "running",
+            "agg": "sum",
+            "input": "base",
+            "order": [
+              {
+                "id": "analytics_window_history.created_at"
+              }
+            ],
+            "partition": [
+              "analytics_window_history.region"
+            ],
+            "history": {
+              "inputRange": [
+                "2024-01-01T00:00:00Z",
+                "2024-05-01T00:00:00Z"
+              ]
+            }
+          }
+        ],
+        "filters": [
+          {
+            "id": "schedule-paid",
+            "origin": "schedule",
+            "member": "analytics_window_history.status",
+            "operator": "equals",
+            "values": [
+              "paid"
+            ]
+          }
+        ],
+        "resultOps": {
+          "sort": [
+            {
+              "id": "analytics_window_history.region"
+            },
+            {
+              "id": "analytics_window_history.created_at"
+            }
+          ],
+          "page": {
+            "limit": 1,
+            "offset": 1
+          }
+        },
+        "limit": 4
+      },
+      "expected": [
+        [
+          "A",
+          "2024-04",
+          80
+        ]
+      ],
+      "oracle": "WITH grouped AS (SELECT region, DATE_TRUNC('month',created_at) bucket,SUM(amount) amount FROM analytics_window_history\nWHERE id <> -8 AND status='paid' AND created_at >= TIMESTAMP '2024-01-01' AND created_at <= TIMESTAMP '2024-05-01'  GROUP BY 1,2),\nhistory AS (SELECT region,bucket,SUM(amount) OVER (PARTITION BY region ORDER BY bucket ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) running FROM grouped)\nSELECT region,bucket,running FROM history WHERE bucket >= TIMESTAMP '2024-03-01' AND bucket <= TIMESTAMP '2024-05-01'  ORDER BY region ASC NULLS LAST,bucket ASC LIMIT 1 OFFSET 1",
+      "large": false,
+      "query": "WITH visible_base AS (\nSELECT\n  analytics_window_history.region AS \"analytics_window_history.region\", DATE_TRUNC('month', analytics_window_history.created_at) AS \"analytics_window_history.created_at\", SUM(analytics_window_history.amount) AS \"base\"\n  FROM analytics_window_history\n  WHERE (analytics_window_history.created_at >= '2024-03-01T00:00:00Z' AND analytics_window_history.created_at <= '2024-05-01T00:00:00Z') AND analytics_window_history.status = 'paid'\n  GROUP BY 1, 2\n),\nwindow_history AS (\nSELECT\n  analytics_window_history.region AS \"analytics_window_history.region\", DATE_TRUNC('month', analytics_window_history.created_at) AS \"analytics_window_history.created_at\", SUM(SUM(analytics_window_history.amount)) OVER (PARTITION BY analytics_window_history.region ORDER BY DATE_TRUNC('month', analytics_window_history.created_at) ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS \"running\"\n  FROM analytics_window_history\n  WHERE (analytics_window_history.created_at >= '2024-01-01T00:00:00Z' AND analytics_window_history.created_at <= '2024-05-01T00:00:00Z') AND analytics_window_history.status = 'paid'\n  GROUP BY 1, 2\n),\njoin_keys AS (\nSELECT\n  visible_base.\"analytics_window_history.region\" AS \"analytics_window_history.region\", visible_base.\"analytics_window_history.created_at\" AS \"analytics_window_history.created_at\", visible_base.\"base\" AS \"base\", COALESCE(CAST(visible_base.\"analytics_window_history.region\" AS VARCHAR), '') AS \"__join_value_0\", (visible_base.\"analytics_window_history.region\" IS NULL) AS \"__join_null_0\", COALESCE(CAST(visible_base.\"analytics_window_history.created_at\" AS VARCHAR), '') AS \"__join_value_1\", (visible_base.\"analytics_window_history.created_at\" IS NULL) AS \"__join_null_1\"\n  FROM visible_base\n),\njoin_keys_2 AS (\nSELECT\n  window_history.\"analytics_window_history.region\" AS \"analytics_window_history.region\", window_history.\"analytics_window_history.created_at\" AS \"analytics_window_history.created_at\", window_history.\"running\" AS \"running\", COALESCE(CAST(window_history.\"analytics_window_history.region\" AS VARCHAR), '') AS \"__join_value_0\", (window_history.\"analytics_window_history.region\" IS NULL) AS \"__join_null_0\", COALESCE(CAST(window_history.\"analytics_window_history.created_at\" AS VARCHAR), '') AS \"__join_value_1\", (window_history.\"analytics_window_history.created_at\" IS NULL) AS \"__join_null_1\"\n  FROM window_history\n),\nhistory_attached AS (\nSELECT\n  visible.\"analytics_window_history.region\" AS \"analytics_window_history.region\", visible.\"analytics_window_history.created_at\" AS \"analytics_window_history.created_at\", visible.\"base\" AS \"base\", history.\"running\" AS \"running\"\n  FROM join_keys visible LEFT JOIN join_keys_2 history ON visible.\"__join_value_0\" = history.\"__join_value_0\" AND visible.\"__join_null_0\" = history.\"__join_null_0\" AND visible.\"__join_value_1\" = history.\"__join_value_1\" AND visible.\"__join_null_1\" = history.\"__join_null_1\"\n)\nSELECT\n  history_attached.\"analytics_window_history.region\" AS \"analytics_window_history.region\", history_attached.\"analytics_window_history.created_at\" AS \"analytics_window_history.created_at\", history_attached.\"running\" AS \"running\"\n  FROM history_attached\n  ORDER BY history_attached.\"analytics_window_history.region\" ASC, history_attached.\"analytics_window_history.created_at\" ASC\n  LIMIT 1\n  OFFSET 1"
+    },
+    {
+      "id": "EMPTY",
+      "principal": "auditor",
+      "authoredQuery": {
+        "dimensions": [
+          "analytics_window_history.region"
+        ],
+        "timeDimensions": [
+          {
+            "dimension": "analytics_window_history.created_at",
+            "granularity": "month",
+            "dateRange": [
+              "2024-03-01T00:00:00Z",
+              "2024-05-01T00:00:00Z"
+            ]
+          }
+        ],
+        "calculations": [
+          {
+            "kind": "aggregate",
+            "id": "base",
+            "agg": "sum",
+            "expr": {
+              "t": "col",
+              "member": "analytics_window_history.amount"
+            }
+          }
+        ],
+        "measures": [
+          {
+            "kind": "window",
+            "id": "running",
+            "fn": "running",
+            "agg": "sum",
+            "input": "base",
+            "order": [
+              {
+                "id": "analytics_window_history.created_at"
+              }
+            ],
+            "partition": [
+              "analytics_window_history.region"
+            ],
+            "history": {
+              "inputRange": [
+                "2024-01-01T00:00:00Z",
+                "2024-05-01T00:00:00Z"
+              ]
+            }
+          }
+        ],
+        "filters": [
+          {
+            "member": "analytics_window_history.status",
+            "operator": "equals",
+            "values": [
+              "paid"
+            ]
+          },
+          {
+            "member": "analytics_window_history.region",
+            "operator": "equals",
+            "values": [
+              "missing"
+            ]
+          }
+        ],
+        "resultOps": {
+          "sort": [
+            {
+              "id": "analytics_window_history.region"
+            },
+            {
+              "id": "analytics_window_history.created_at"
+            }
+          ]
+        },
+        "limit": 4
+      },
+      "expected": [],
+      "oracle": "WITH grouped AS (SELECT region, DATE_TRUNC('month',created_at) bucket,SUM(amount) amount FROM analytics_window_history\nWHERE id <> -8 AND status='paid' AND created_at >= TIMESTAMP '2024-01-01' AND created_at <= TIMESTAMP '2024-05-01' AND region='missing' GROUP BY 1,2),\nhistory AS (SELECT region,bucket,SUM(amount) OVER (PARTITION BY region ORDER BY bucket ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) running FROM grouped)\nSELECT region,bucket,running FROM history WHERE bucket >= TIMESTAMP '2024-03-01' AND bucket <= TIMESTAMP '2024-05-01'  ORDER BY region ASC NULLS LAST,bucket ASC LIMIT 4",
+      "large": false,
+      "query": "WITH visible_base AS (\nSELECT\n  analytics_window_history.region AS \"analytics_window_history.region\", DATE_TRUNC('month', analytics_window_history.created_at) AS \"analytics_window_history.created_at\", SUM(analytics_window_history.amount) AS \"base\"\n  FROM analytics_window_history\n  WHERE (analytics_window_history.created_at >= '2024-03-01T00:00:00Z' AND analytics_window_history.created_at <= '2024-05-01T00:00:00Z') AND analytics_window_history.status = 'paid' AND analytics_window_history.region = 'missing'\n  GROUP BY 1, 2\n),\nwindow_history AS (\nSELECT\n  analytics_window_history.region AS \"analytics_window_history.region\", DATE_TRUNC('month', analytics_window_history.created_at) AS \"analytics_window_history.created_at\", SUM(SUM(analytics_window_history.amount)) OVER (PARTITION BY analytics_window_history.region ORDER BY DATE_TRUNC('month', analytics_window_history.created_at) ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS \"running\"\n  FROM analytics_window_history\n  WHERE (analytics_window_history.created_at >= '2024-01-01T00:00:00Z' AND analytics_window_history.created_at <= '2024-05-01T00:00:00Z') AND analytics_window_history.status = 'paid' AND analytics_window_history.region = 'missing'\n  GROUP BY 1, 2\n),\njoin_keys AS (\nSELECT\n  visible_base.\"analytics_window_history.region\" AS \"analytics_window_history.region\", visible_base.\"analytics_window_history.created_at\" AS \"analytics_window_history.created_at\", visible_base.\"base\" AS \"base\", COALESCE(CAST(visible_base.\"analytics_window_history.region\" AS VARCHAR), '') AS \"__join_value_0\", (visible_base.\"analytics_window_history.region\" IS NULL) AS \"__join_null_0\", COALESCE(CAST(visible_base.\"analytics_window_history.created_at\" AS VARCHAR), '') AS \"__join_value_1\", (visible_base.\"analytics_window_history.created_at\" IS NULL) AS \"__join_null_1\"\n  FROM visible_base\n),\njoin_keys_2 AS (\nSELECT\n  window_history.\"analytics_window_history.region\" AS \"analytics_window_history.region\", window_history.\"analytics_window_history.created_at\" AS \"analytics_window_history.created_at\", window_history.\"running\" AS \"running\", COALESCE(CAST(window_history.\"analytics_window_history.region\" AS VARCHAR), '') AS \"__join_value_0\", (window_history.\"analytics_window_history.region\" IS NULL) AS \"__join_null_0\", COALESCE(CAST(window_history.\"analytics_window_history.created_at\" AS VARCHAR), '') AS \"__join_value_1\", (window_history.\"analytics_window_history.created_at\" IS NULL) AS \"__join_null_1\"\n  FROM window_history\n),\nhistory_attached AS (\nSELECT\n  visible.\"analytics_window_history.region\" AS \"analytics_window_history.region\", visible.\"analytics_window_history.created_at\" AS \"analytics_window_history.created_at\", visible.\"base\" AS \"base\", history.\"running\" AS \"running\"\n  FROM join_keys visible LEFT JOIN join_keys_2 history ON visible.\"__join_value_0\" = history.\"__join_value_0\" AND visible.\"__join_null_0\" = history.\"__join_null_0\" AND visible.\"__join_value_1\" = history.\"__join_value_1\" AND visible.\"__join_null_1\" = history.\"__join_null_1\"\n)\nSELECT\n  history_attached.\"analytics_window_history.region\" AS \"analytics_window_history.region\", history_attached.\"analytics_window_history.created_at\" AS \"analytics_window_history.created_at\", history_attached.\"running\" AS \"running\"\n  FROM history_attached\n  ORDER BY history_attached.\"analytics_window_history.region\" ASC, history_attached.\"analytics_window_history.created_at\" ASC\n  LIMIT 4"
+    },
+    {
+      "id": "ANALYST",
+      "principal": "analyst",
+      "authoredQuery": {
+        "dimensions": [
+          "analytics_window_history.region"
+        ],
+        "timeDimensions": [
+          {
+            "dimension": "analytics_window_history.created_at",
+            "granularity": "month",
+            "dateRange": [
+              "2024-03-01T00:00:00Z",
+              "2024-05-01T00:00:00Z"
+            ]
+          }
+        ],
+        "calculations": [
+          {
+            "kind": "aggregate",
+            "id": "base",
+            "agg": "sum",
+            "expr": {
+              "t": "col",
+              "member": "analytics_window_history.amount"
+            }
+          }
+        ],
+        "measures": [
+          {
+            "kind": "window",
+            "id": "running",
+            "fn": "running",
+            "agg": "sum",
+            "input": "base",
+            "order": [
+              {
+                "id": "analytics_window_history.created_at"
+              }
+            ],
+            "partition": [
+              "analytics_window_history.region"
+            ],
+            "history": {
+              "inputRange": [
+                "2024-01-01T00:00:00Z",
+                "2024-05-01T00:00:00Z"
+              ]
+            }
+          }
+        ],
+        "filters": [
+          {
+            "id": "schedule-paid",
+            "origin": "schedule",
+            "member": "analytics_window_history.status",
+            "operator": "equals",
+            "values": [
+              "paid"
+            ]
+          }
+        ],
+        "resultOps": {
+          "sort": [
+            {
+              "id": "analytics_window_history.region"
+            },
+            {
+              "id": "analytics_window_history.created_at"
+            }
+          ]
+        },
+        "limit": 4
+      },
+      "expected": [
+        [
+          "A",
+          "2024-03",
+          40
+        ],
+        [
+          "A",
+          "2024-04",
+          80
+        ]
+      ],
+      "oracle": "WITH grouped AS (SELECT region, DATE_TRUNC('month',created_at) bucket,SUM(amount) amount FROM analytics_window_history\nWHERE id <> -8 AND status='paid' AND created_at >= TIMESTAMP '2024-01-01' AND created_at <= TIMESTAMP '2024-05-01' AND region='A' GROUP BY 1,2),\nhistory AS (SELECT region,bucket,SUM(amount) OVER (PARTITION BY region ORDER BY bucket ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) running FROM grouped)\nSELECT region,bucket,running FROM history WHERE bucket >= TIMESTAMP '2024-03-01' AND bucket <= TIMESTAMP '2024-05-01'  ORDER BY region ASC NULLS LAST,bucket ASC LIMIT 4",
+      "large": false,
+      "query": "WITH visible_base AS (\nSELECT\n  analytics_window_history.region AS \"analytics_window_history.region\", DATE_TRUNC('month', analytics_window_history.created_at) AS \"analytics_window_history.created_at\", SUM(analytics_window_history.amount) AS \"base\"\n  FROM analytics_window_history\n  WHERE (analytics_window_history.created_at >= '2024-03-01T00:00:00Z' AND analytics_window_history.created_at <= '2024-05-01T00:00:00Z') AND analytics_window_history.status = 'paid'\n  GROUP BY 1, 2\n),\nwindow_history AS (\nSELECT\n  analytics_window_history.region AS \"analytics_window_history.region\", DATE_TRUNC('month', analytics_window_history.created_at) AS \"analytics_window_history.created_at\", SUM(SUM(analytics_window_history.amount)) OVER (PARTITION BY analytics_window_history.region ORDER BY DATE_TRUNC('month', analytics_window_history.created_at) ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS \"running\"\n  FROM analytics_window_history\n  WHERE (analytics_window_history.created_at >= '2024-01-01T00:00:00Z' AND analytics_window_history.created_at <= '2024-05-01T00:00:00Z') AND analytics_window_history.status = 'paid'\n  GROUP BY 1, 2\n),\njoin_keys AS (\nSELECT\n  visible_base.\"analytics_window_history.region\" AS \"analytics_window_history.region\", visible_base.\"analytics_window_history.created_at\" AS \"analytics_window_history.created_at\", visible_base.\"base\" AS \"base\", COALESCE(CAST(visible_base.\"analytics_window_history.region\" AS VARCHAR), '') AS \"__join_value_0\", (visible_base.\"analytics_window_history.region\" IS NULL) AS \"__join_null_0\", COALESCE(CAST(visible_base.\"analytics_window_history.created_at\" AS VARCHAR), '') AS \"__join_value_1\", (visible_base.\"analytics_window_history.created_at\" IS NULL) AS \"__join_null_1\"\n  FROM visible_base\n),\njoin_keys_2 AS (\nSELECT\n  window_history.\"analytics_window_history.region\" AS \"analytics_window_history.region\", window_history.\"analytics_window_history.created_at\" AS \"analytics_window_history.created_at\", window_history.\"running\" AS \"running\", COALESCE(CAST(window_history.\"analytics_window_history.region\" AS VARCHAR), '') AS \"__join_value_0\", (window_history.\"analytics_window_history.region\" IS NULL) AS \"__join_null_0\", COALESCE(CAST(window_history.\"analytics_window_history.created_at\" AS VARCHAR), '') AS \"__join_value_1\", (window_history.\"analytics_window_history.created_at\" IS NULL) AS \"__join_null_1\"\n  FROM window_history\n),\nhistory_attached AS (\nSELECT\n  visible.\"analytics_window_history.region\" AS \"analytics_window_history.region\", visible.\"analytics_window_history.created_at\" AS \"analytics_window_history.created_at\", visible.\"base\" AS \"base\", history.\"running\" AS \"running\"\n  FROM join_keys visible LEFT JOIN join_keys_2 history ON visible.\"__join_value_0\" = history.\"__join_value_0\" AND visible.\"__join_null_0\" = history.\"__join_null_0\" AND visible.\"__join_value_1\" = history.\"__join_value_1\" AND visible.\"__join_null_1\" = history.\"__join_null_1\"\n)\nSELECT\n  history_attached.\"analytics_window_history.region\" AS \"analytics_window_history.region\", history_attached.\"analytics_window_history.created_at\" AS \"analytics_window_history.created_at\", history_attached.\"running\" AS \"running\"\n  FROM history_attached\n  ORDER BY history_attached.\"analytics_window_history.region\" ASC, history_attached.\"analytics_window_history.created_at\" ASC\n  LIMIT 4"
+    },
+    {
+      "id": "CUTOFF",
+      "principal": "auditor",
+      "authoredQuery": {
+        "dimensions": [
+          "analytics_window_history.region"
+        ],
+        "timeDimensions": [
+          {
+            "dimension": "analytics_window_history.created_at",
+            "granularity": "month",
+            "dateRange": [
+              "2024-03-01T00:00:00Z",
+              "2024-05-01T00:00:00Z"
+            ]
+          },
+          {
+            "dimension": "analytics_window_history.clipped_at",
+            "completePeriodCutoff": {
+              "period": "month"
+            }
+          }
+        ],
+        "calculations": [
+          {
+            "kind": "aggregate",
+            "id": "base",
+            "agg": "sum",
+            "expr": {
+              "t": "col",
+              "member": "analytics_window_history.amount"
+            }
+          }
+        ],
+        "measures": [
+          {
+            "kind": "window",
+            "id": "running",
+            "fn": "running",
+            "agg": "sum",
+            "input": "base",
+            "order": [
+              {
+                "id": "analytics_window_history.created_at"
+              }
+            ],
+            "partition": [
+              "analytics_window_history.region"
+            ],
+            "history": {
+              "inputRange": [
+                "2024-01-01T00:00:00Z",
+                "2024-05-01T00:00:00Z"
+              ]
+            }
+          }
+        ],
+        "filters": [
+          {
+            "id": "schedule-paid",
+            "origin": "schedule",
+            "member": "analytics_window_history.status",
+            "operator": "equals",
+            "values": [
+              "paid"
+            ]
+          }
+        ],
+        "resultOps": {
+          "sort": [
+            {
+              "id": "analytics_window_history.region"
+            },
+            {
+              "id": "analytics_window_history.created_at"
+            }
+          ]
+        },
+        "limit": 4
+      },
+      "expected": [
+        [
+          "A",
+          "2024-03",
+          40
+        ],
+        [
+          "all-null",
+          "2024-03",
+          null
+        ],
+        [
+          null,
+          "2024-03",
+          12
+        ]
+      ],
+      "oracle": "WITH grouped AS (SELECT region, DATE_TRUNC('month',created_at) bucket,SUM(amount) amount FROM analytics_window_history\nWHERE id <> -8 AND status='paid' AND created_at >= TIMESTAMP '2024-01-01' AND created_at <= TIMESTAMP '2024-05-01' AND created_at < TIMESTAMP '2024-04-01' GROUP BY 1,2),\nhistory AS (SELECT region,bucket,SUM(amount) OVER (PARTITION BY region ORDER BY bucket ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) running FROM grouped)\nSELECT region,bucket,running FROM history WHERE bucket >= TIMESTAMP '2024-03-01' AND bucket <= TIMESTAMP '2024-05-01'  ORDER BY region ASC NULLS LAST,bucket ASC LIMIT 4",
+      "large": false,
+      "cutoff": "2024-04-01T00:00:00.000",
+      "query": "WITH visible_base AS (\nSELECT\n  analytics_window_history.region AS \"analytics_window_history.region\", DATE_TRUNC('month', analytics_window_history.created_at) AS \"analytics_window_history.created_at\", SUM(analytics_window_history.amount) AS \"base\"\n  FROM analytics_window_history\n  WHERE (analytics_window_history.created_at >= '2024-03-01T00:00:00Z' AND analytics_window_history.created_at <= '2024-05-01T00:00:00Z') AND analytics_window_history.clipped_at < '2024-04-01T00:00:00.000' AND analytics_window_history.status = 'paid'\n  GROUP BY 1, 2\n),\nwindow_history AS (\nSELECT\n  analytics_window_history.region AS \"analytics_window_history.region\", DATE_TRUNC('month', analytics_window_history.created_at) AS \"analytics_window_history.created_at\", SUM(SUM(analytics_window_history.amount)) OVER (PARTITION BY analytics_window_history.region ORDER BY DATE_TRUNC('month', analytics_window_history.created_at) ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS \"running\"\n  FROM analytics_window_history\n  WHERE (analytics_window_history.created_at >= '2024-01-01T00:00:00Z' AND analytics_window_history.created_at <= '2024-05-01T00:00:00Z') AND analytics_window_history.clipped_at < '2024-04-01T00:00:00.000' AND analytics_window_history.status = 'paid'\n  GROUP BY 1, 2\n),\njoin_keys AS (\nSELECT\n  visible_base.\"analytics_window_history.region\" AS \"analytics_window_history.region\", visible_base.\"analytics_window_history.created_at\" AS \"analytics_window_history.created_at\", visible_base.\"base\" AS \"base\", COALESCE(CAST(visible_base.\"analytics_window_history.region\" AS VARCHAR), '') AS \"__join_value_0\", (visible_base.\"analytics_window_history.region\" IS NULL) AS \"__join_null_0\", COALESCE(CAST(visible_base.\"analytics_window_history.created_at\" AS VARCHAR), '') AS \"__join_value_1\", (visible_base.\"analytics_window_history.created_at\" IS NULL) AS \"__join_null_1\"\n  FROM visible_base\n),\njoin_keys_2 AS (\nSELECT\n  window_history.\"analytics_window_history.region\" AS \"analytics_window_history.region\", window_history.\"analytics_window_history.created_at\" AS \"analytics_window_history.created_at\", window_history.\"running\" AS \"running\", COALESCE(CAST(window_history.\"analytics_window_history.region\" AS VARCHAR), '') AS \"__join_value_0\", (window_history.\"analytics_window_history.region\" IS NULL) AS \"__join_null_0\", COALESCE(CAST(window_history.\"analytics_window_history.created_at\" AS VARCHAR), '') AS \"__join_value_1\", (window_history.\"analytics_window_history.created_at\" IS NULL) AS \"__join_null_1\"\n  FROM window_history\n),\nhistory_attached AS (\nSELECT\n  visible.\"analytics_window_history.region\" AS \"analytics_window_history.region\", visible.\"analytics_window_history.created_at\" AS \"analytics_window_history.created_at\", visible.\"base\" AS \"base\", history.\"running\" AS \"running\"\n  FROM join_keys visible LEFT JOIN join_keys_2 history ON visible.\"__join_value_0\" = history.\"__join_value_0\" AND visible.\"__join_null_0\" = history.\"__join_null_0\" AND visible.\"__join_value_1\" = history.\"__join_value_1\" AND visible.\"__join_null_1\" = history.\"__join_null_1\"\n)\nSELECT\n  history_attached.\"analytics_window_history.region\" AS \"analytics_window_history.region\", history_attached.\"analytics_window_history.created_at\" AS \"analytics_window_history.created_at\", history_attached.\"running\" AS \"running\"\n  FROM history_attached\n  ORDER BY history_attached.\"analytics_window_history.region\" ASC, history_attached.\"analytics_window_history.created_at\" ASC\n  LIMIT 4"
+    },
+    {
+      "id": "BOUNDARIES",
+      "principal": "auditor",
+      "authoredQuery": {
+        "dimensions": [
+          "analytics_window_history.region"
+        ],
+        "timeDimensions": [
+          {
+            "dimension": "analytics_window_history.created_at",
+            "granularity": "second",
+            "dateRange": [
+              "2020-01-01T02:46:41.000Z",
+              "2020-01-01T16:40:02.000Z"
+            ]
+          }
+        ],
+        "calculations": [
+          {
+            "kind": "aggregate",
+            "id": "base",
+            "agg": "sum",
+            "expr": {
+              "t": "col",
+              "member": "analytics_window_history.amount"
+            }
+          }
+        ],
+        "measures": [
+          {
+            "kind": "window",
+            "id": "running",
+            "fn": "running",
+            "agg": "sum",
+            "input": "base",
+            "order": [
+              {
+                "id": "analytics_window_history.created_at"
+              }
+            ],
+            "partition": [
+              "analytics_window_history.region"
+            ],
+            "history": {
+              "inputRange": [
+                "2020-01-01T00:00:00.000Z",
+                "2020-01-01T16:40:02.000Z"
+              ]
+            }
+          }
+        ],
+        "filters": [
+          {
+            "member": "analytics_window_history.region",
+            "operator": "equals",
+            "values": [
+              "large"
+            ]
+          },
+          {
+            "member": "analytics_window_history.status",
+            "operator": "equals",
+            "values": [
+              "paid"
+            ]
+          }
+        ],
+        "resultOps": {
+          "sort": [
+            {
+              "id": "running",
+              "desc": true
+            }
+          ],
+          "filters": [
+            {
+              "member": "running",
+              "operator": "equals",
+              "values": [
+                "60001",
+                "50001",
+                "50000",
+                "49999"
+              ]
+            }
+          ],
+          "page": {
+            "limit": 4
+          }
+        },
+        "limit": 4
+      },
+      "oracle": "WITH grouped AS (SELECT region,created_at bucket,SUM(amount) amount FROM analytics_window_history WHERE id <> -8 AND status='paid' AND region='large' GROUP BY 1,2),\n history AS (SELECT region,bucket,SUM(amount) OVER (PARTITION BY region ORDER BY bucket ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) running FROM grouped)\n SELECT region,bucket,running FROM history WHERE bucket >= TIMESTAMP '2020-01-01T02:46:41.000Z' AND running IN (60001,50001,50000,49999)\n ORDER BY running DESC LIMIT 4 ",
+      "expected": [
+        [
+          "large",
+          "2020-01-01T16:40:01.000Z",
+          60001
+        ],
+        [
+          "large",
+          "2020-01-01T13:53:21.000Z",
+          50001
+        ],
+        [
+          "large",
+          "2020-01-01T13:53:20.000Z",
+          50000
+        ],
+        [
+          "large",
+          "2020-01-01T13:53:19.000Z",
+          49999
+        ]
+      ],
+      "large": true,
+      "query": "WITH visible_base AS (\nSELECT\n  analytics_window_history.region AS \"analytics_window_history.region\", DATE_TRUNC('second', analytics_window_history.created_at) AS \"analytics_window_history.created_at\", SUM(analytics_window_history.amount) AS \"base\"\n  FROM analytics_window_history\n  WHERE (analytics_window_history.created_at >= '2020-01-01T02:46:41.000Z' AND analytics_window_history.created_at <= '2020-01-01T16:40:02.000Z') AND analytics_window_history.region = 'large' AND analytics_window_history.status = 'paid'\n  GROUP BY 1, 2\n),\nwindow_history AS (\nSELECT\n  analytics_window_history.region AS \"analytics_window_history.region\", DATE_TRUNC('second', analytics_window_history.created_at) AS \"analytics_window_history.created_at\", SUM(SUM(analytics_window_history.amount)) OVER (PARTITION BY analytics_window_history.region ORDER BY DATE_TRUNC('second', analytics_window_history.created_at) ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS \"running\"\n  FROM analytics_window_history\n  WHERE (analytics_window_history.created_at >= '2020-01-01T00:00:00.000Z' AND analytics_window_history.created_at <= '2020-01-01T16:40:02.000Z') AND analytics_window_history.region = 'large' AND analytics_window_history.status = 'paid'\n  GROUP BY 1, 2\n),\njoin_keys AS (\nSELECT\n  visible_base.\"analytics_window_history.region\" AS \"analytics_window_history.region\", visible_base.\"analytics_window_history.created_at\" AS \"analytics_window_history.created_at\", visible_base.\"base\" AS \"base\", COALESCE(CAST(visible_base.\"analytics_window_history.region\" AS VARCHAR), '') AS \"__join_value_0\", (visible_base.\"analytics_window_history.region\" IS NULL) AS \"__join_null_0\", COALESCE(CAST(visible_base.\"analytics_window_history.created_at\" AS VARCHAR), '') AS \"__join_value_1\", (visible_base.\"analytics_window_history.created_at\" IS NULL) AS \"__join_null_1\"\n  FROM visible_base\n),\njoin_keys_2 AS (\nSELECT\n  window_history.\"analytics_window_history.region\" AS \"analytics_window_history.region\", window_history.\"analytics_window_history.created_at\" AS \"analytics_window_history.created_at\", window_history.\"running\" AS \"running\", COALESCE(CAST(window_history.\"analytics_window_history.region\" AS VARCHAR), '') AS \"__join_value_0\", (window_history.\"analytics_window_history.region\" IS NULL) AS \"__join_null_0\", COALESCE(CAST(window_history.\"analytics_window_history.created_at\" AS VARCHAR), '') AS \"__join_value_1\", (window_history.\"analytics_window_history.created_at\" IS NULL) AS \"__join_null_1\"\n  FROM window_history\n),\nhistory_attached AS (\nSELECT\n  visible.\"analytics_window_history.region\" AS \"analytics_window_history.region\", visible.\"analytics_window_history.created_at\" AS \"analytics_window_history.created_at\", visible.\"base\" AS \"base\", history.\"running\" AS \"running\"\n  FROM join_keys visible LEFT JOIN join_keys_2 history ON visible.\"__join_value_0\" = history.\"__join_value_0\" AND visible.\"__join_null_0\" = history.\"__join_null_0\" AND visible.\"__join_value_1\" = history.\"__join_value_1\" AND visible.\"__join_null_1\" = history.\"__join_null_1\"\n)\nSELECT\n  history_attached.\"analytics_window_history.region\" AS \"analytics_window_history.region\", history_attached.\"analytics_window_history.created_at\" AS \"analytics_window_history.created_at\", history_attached.\"running\" AS \"running\"\n  FROM history_attached\n  WHERE history_attached.\"running\" IN ('60001', '50001', '50000', '49999')\n  ORDER BY history_attached.\"running\" DESC\n  LIMIT 4"
+    },
+    {
+      "id": "GLOBAL-PAGE",
+      "principal": "auditor",
+      "authoredQuery": {
+        "dimensions": [
+          "analytics_window_history.region"
+        ],
+        "timeDimensions": [
+          {
+            "dimension": "analytics_window_history.created_at",
+            "granularity": "second",
+            "dateRange": [
+              "2020-01-01T02:46:41.000Z",
+              "2020-01-01T16:40:02.000Z"
+            ]
+          }
+        ],
+        "calculations": [
+          {
+            "kind": "aggregate",
+            "id": "base",
+            "agg": "sum",
+            "expr": {
+              "t": "col",
+              "member": "analytics_window_history.amount"
+            }
+          }
+        ],
+        "measures": [
+          {
+            "kind": "window",
+            "id": "running",
+            "fn": "running",
+            "agg": "sum",
+            "input": "base",
+            "order": [
+              {
+                "id": "analytics_window_history.created_at"
+              }
+            ],
+            "partition": [
+              "analytics_window_history.region"
+            ],
+            "history": {
+              "inputRange": [
+                "2020-01-01T00:00:00.000Z",
+                "2020-01-01T16:40:02.000Z"
+              ]
+            }
+          }
+        ],
+        "filters": [
+          {
+            "member": "analytics_window_history.region",
+            "operator": "equals",
+            "values": [
+              "large"
+            ]
+          },
+          {
+            "member": "analytics_window_history.status",
+            "operator": "equals",
+            "values": [
+              "paid"
+            ]
+          }
+        ],
+        "resultOps": {
+          "sort": [
+            {
+              "id": "running",
+              "desc": true
+            }
+          ],
+          "page": {
+            "limit": 3,
+            "offset": 10000
+          }
+        },
+        "limit": 4
+      },
+      "oracle": "WITH grouped AS (SELECT region,created_at bucket,SUM(amount) amount FROM analytics_window_history WHERE id <> -8 AND status='paid' AND region='large' GROUP BY 1,2),\n history AS (SELECT region,bucket,SUM(amount) OVER (PARTITION BY region ORDER BY bucket ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) running FROM grouped)\n SELECT region,bucket,running FROM history WHERE bucket >= TIMESTAMP '2020-01-01T02:46:41.000Z' \n ORDER BY running DESC LIMIT 3 OFFSET 10000",
+      "expected": [
+        [
+          "large",
+          "2020-01-01T13:53:21.000Z",
+          50001
+        ],
+        [
+          "large",
+          "2020-01-01T13:53:20.000Z",
+          50000
+        ],
+        [
+          "large",
+          "2020-01-01T13:53:19.000Z",
+          49999
+        ]
+      ],
+      "large": true,
+      "query": "WITH visible_base AS (\nSELECT\n  analytics_window_history.region AS \"analytics_window_history.region\", DATE_TRUNC('second', analytics_window_history.created_at) AS \"analytics_window_history.created_at\", SUM(analytics_window_history.amount) AS \"base\"\n  FROM analytics_window_history\n  WHERE (analytics_window_history.created_at >= '2020-01-01T02:46:41.000Z' AND analytics_window_history.created_at <= '2020-01-01T16:40:02.000Z') AND analytics_window_history.region = 'large' AND analytics_window_history.status = 'paid'\n  GROUP BY 1, 2\n),\nwindow_history AS (\nSELECT\n  analytics_window_history.region AS \"analytics_window_history.region\", DATE_TRUNC('second', analytics_window_history.created_at) AS \"analytics_window_history.created_at\", SUM(SUM(analytics_window_history.amount)) OVER (PARTITION BY analytics_window_history.region ORDER BY DATE_TRUNC('second', analytics_window_history.created_at) ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS \"running\"\n  FROM analytics_window_history\n  WHERE (analytics_window_history.created_at >= '2020-01-01T00:00:00.000Z' AND analytics_window_history.created_at <= '2020-01-01T16:40:02.000Z') AND analytics_window_history.region = 'large' AND analytics_window_history.status = 'paid'\n  GROUP BY 1, 2\n),\njoin_keys AS (\nSELECT\n  visible_base.\"analytics_window_history.region\" AS \"analytics_window_history.region\", visible_base.\"analytics_window_history.created_at\" AS \"analytics_window_history.created_at\", visible_base.\"base\" AS \"base\", COALESCE(CAST(visible_base.\"analytics_window_history.region\" AS VARCHAR), '') AS \"__join_value_0\", (visible_base.\"analytics_window_history.region\" IS NULL) AS \"__join_null_0\", COALESCE(CAST(visible_base.\"analytics_window_history.created_at\" AS VARCHAR), '') AS \"__join_value_1\", (visible_base.\"analytics_window_history.created_at\" IS NULL) AS \"__join_null_1\"\n  FROM visible_base\n),\njoin_keys_2 AS (\nSELECT\n  window_history.\"analytics_window_history.region\" AS \"analytics_window_history.region\", window_history.\"analytics_window_history.created_at\" AS \"analytics_window_history.created_at\", window_history.\"running\" AS \"running\", COALESCE(CAST(window_history.\"analytics_window_history.region\" AS VARCHAR), '') AS \"__join_value_0\", (window_history.\"analytics_window_history.region\" IS NULL) AS \"__join_null_0\", COALESCE(CAST(window_history.\"analytics_window_history.created_at\" AS VARCHAR), '') AS \"__join_value_1\", (window_history.\"analytics_window_history.created_at\" IS NULL) AS \"__join_null_1\"\n  FROM window_history\n),\nhistory_attached AS (\nSELECT\n  visible.\"analytics_window_history.region\" AS \"analytics_window_history.region\", visible.\"analytics_window_history.created_at\" AS \"analytics_window_history.created_at\", visible.\"base\" AS \"base\", history.\"running\" AS \"running\"\n  FROM join_keys visible LEFT JOIN join_keys_2 history ON visible.\"__join_value_0\" = history.\"__join_value_0\" AND visible.\"__join_null_0\" = history.\"__join_null_0\" AND visible.\"__join_value_1\" = history.\"__join_value_1\" AND visible.\"__join_null_1\" = history.\"__join_null_1\"\n)\nSELECT\n  history_attached.\"analytics_window_history.region\" AS \"analytics_window_history.region\", history_attached.\"analytics_window_history.created_at\" AS \"analytics_window_history.created_at\", history_attached.\"running\" AS \"running\"\n  FROM history_attached\n  ORDER BY history_attached.\"running\" DESC\n  LIMIT 3\n  OFFSET 10000"
+    }
+  ]
+}

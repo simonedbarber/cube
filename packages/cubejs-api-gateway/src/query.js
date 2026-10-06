@@ -209,6 +209,10 @@ const querySchema = Joi.object().keys({
     member: Joi.string().required(),
     filter: Joi.object(),
   })),
+  rowLevelFilters: Joi.array().items(Joi.object().keys({
+    cube: Joi.string().regex(/^[a-zA-Z0-9_]+$/).required(),
+    filter: Joi.object().required(),
+  })),
 });
 
 export const cubeSqlRequestSchema = Joi.object().keys({
@@ -480,6 +484,12 @@ const normalizeQuery = (query, persistent, cacheMode) => {
     limit: newLimit,
     timezone,
     filters: normalizeQueryFilters(query.filters || [], timezone),
+    ...(query.rowLevelFilters ? {
+      rowLevelFilters: query.rowLevelFilters.map(item => ({
+        cube: item.cube,
+        filter: normalizeQueryFilters([item.filter], timezone)[0],
+      })),
+    } : {}),
     dimensions: (query.dimensions || []).filter(d => typeof d !== 'string' || d.split('.').length !== 3),
     timeDimensions: (query.timeDimensions || []).map(td => {
       const compareDateRange = td.compareDateRange ? td.compareDateRange.map((currentDateRange) => (typeof currentDateRange === 'string' ? dateParser(currentDateRange, timezone) : currentDateRange)) : null;

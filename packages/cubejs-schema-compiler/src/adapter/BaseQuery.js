@@ -296,6 +296,7 @@ export class BaseQuery {
       subqueryJoins: this.options.subqueryJoins,
       joinHints: this.options.joinHints,
       maskedMembers: this.options.maskedMembers,
+      rowLevelFilters: this.options.rowLevelFilters,
     });
     this.from = this.options.from;
     this.multiStageQuery = this.options.multiStageQuery;
@@ -984,6 +985,7 @@ export class BaseQuery {
       maskedMembers: this.options.maskedMembers,
       memberToAlias: this.options.memberToAlias,
       subqueryJoins: this.options.subqueryJoins,
+      rowLevelFilters: this.options.rowLevelFilters,
     };
 
     try {
@@ -3122,6 +3124,9 @@ export class BaseQuery {
   }
 
   orderBy() {
+    if (this.order.some((term) => term.nullsFirst !== undefined)) {
+      throw new UserError('Explicit SQL null placement requires the native SQL planner.');
+    }
     if (R.isEmpty(this.order)) {
       return '';
     }

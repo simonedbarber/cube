@@ -1,4 +1,5 @@
 use super::{Expr, SingleAliasedSource, TimeSeries, VisitorContext};
+use crate::planner::filter::FilterItem;
 use crate::planner::query_tools::QueryTools;
 use crate::planner::sql_templates::PlanSqlTemplates;
 use crate::planner::{BaseJoinCondition, Granularity};
@@ -201,6 +202,7 @@ impl DimensionJoinCondition {
 
 #[derive(Clone)]
 pub enum JoinCondition {
+    ProtectedInput(Box<JoinCondition>, FilterItem),
     DimensionJoinCondition(DimensionJoinCondition),
     BaseJoinCondition(Rc<dyn BaseJoinCondition>),
     RegularRollingWindowJoinCondition(RegularRollingWindowJoinCondition),
@@ -208,6 +210,10 @@ pub enum JoinCondition {
 }
 
 impl JoinCondition {
+    pub(crate) fn with_input_filter(self, filter: FilterItem) -> Self {
+        Self::ProtectedInput(Box::new(self), filter)
+    }
+
     pub fn new_dimension_join(conditions: Vec<Vec<(Expr, Expr)>>, null_check: bool) -> Self {
         Self::DimensionJoinCondition(DimensionJoinCondition::new(conditions, null_check))
     }
@@ -252,6 +258,11 @@ impl JoinCondition {
         context: Rc<VisitorContext>,
     ) -> Result<String, CubeError> {
         match &self {
+            JoinCondition::ProtectedInput(on, filter) => Ok(format!(
+                "({}) AND ({})",
+                on.to_sql(templates, context.clone())?,
+                crate::physical_plan::filter::render_filter_item(&context, filter, templates)?,
+            )),
             JoinCondition::DimensionJoinCondition(cond) => cond.to_sql(templates, context),
             JoinCondition::BaseJoinCondition(cond) => cond.to_sql(context, templates),
             JoinCondition::RegularRollingWindowJoinCondition(cond) => {

@@ -35,6 +35,25 @@ use std::{
 pub type CubeRewrite = Rewrite<LogicalPlanLanguage, LogicalPlanAnalysis>;
 pub type CubeEGraph = EGraph<LogicalPlanLanguage, LogicalPlanAnalysis>;
 
+// SET carries PostgreSQL session values as text, whereas defaults retain their
+// typed ScalarValue. Both representations must select the same existing policy.
+fn post_processing_preference(value: Option<ScalarValue>) -> Result<bool, CubeError> {
+    match value {
+        None | Some(ScalarValue::Boolean(None)) | Some(ScalarValue::Utf8(None)) => Ok(false),
+        Some(ScalarValue::Boolean(Some(value))) => Ok(value),
+        Some(ScalarValue::Utf8(Some(value))) => match value.to_ascii_lowercase().as_str() {
+            "true" | "on" | "1" => Ok(true),
+            "false" | "off" | "0" => Ok(false),
+            _ => Err(CubeError::user(format!(
+                "Invalid {CUBESQL_PENALIZE_POST_PROCESSING_VAR}: expected a boolean setting"
+            ))),
+        },
+        _ => Err(CubeError::user(format!(
+            "Invalid {CUBESQL_PENALIZE_POST_PROCESSING_VAR}: expected a boolean setting"
+        ))),
+    }
+}
+
 pub struct Rewriter {
     graph: CubeEGraph,
     cube_context: Arc<CubeContext>,
@@ -349,10 +368,7 @@ impl Rewriter {
             .session_state
             .get_variable(CUBESQL_PENALIZE_POST_PROCESSING_VAR)
             .map(|v| v.value);
-        let penalize_post_processing = match penalize_post_processing {
-            Some(ScalarValue::Boolean(val)) => val.unwrap_or(false),
-            _ => false,
-        };
+        let penalize_post_processing = post_processing_preference(penalize_post_processing)?;
 
         // In stream mode an unlimited Cube query is streamed in full rather than capped, so
         // post processing on top of it reads every row and stays correct. Neither the
@@ -585,5 +601,25 @@ impl egg::RewriteScheduler<LogicalPlanLanguage, LogicalPlanAnalysis> for Increme
             &mut self.current_eclasses.iter().copied(),
             usize::MAX,
         )
+    }
+}
+
+#[cfg(test)]
+mod session_preference_tests {
+    use super::*;
+
+    #[test]
+    fn post_processing_setting_preserves_typed_and_sql_text_values() {
+        assert!(!post_processing_preference(None).unwrap());
+        assert!(!post_processing_preference(Some(ScalarValue::Boolean(None))).unwrap());
+        for value in [false, true] {
+            assert_eq!(post_processing_preference(Some(ScalarValue::Boolean(Some(value)))).unwrap(), value);
+        }
+        for (text, expected) in [("true", true), ("TRUE", true), ("on", true), ("1", true),
+            ("false", false), ("FALSE", false), ("off", false), ("0", false)] {
+            assert_eq!(post_processing_preference(Some(ScalarValue::Utf8(Some(text.into())))).unwrap(), expected);
+        }
+        assert!(post_processing_preference(Some(ScalarValue::Utf8(Some("maybe".into())))).is_err());
+        assert!(post_processing_preference(Some(ScalarValue::Int64(Some(2)))).is_err());
     }
 }

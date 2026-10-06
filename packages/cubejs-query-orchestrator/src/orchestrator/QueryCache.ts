@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import csvWriter from 'csv-write-stream';
 import { LRUCache } from 'lru-cache';
-import { pipeline } from 'stream';
+import { pipeline, Readable } from 'stream';
 import {
   AsyncDebounce,
   getEnv,
@@ -19,9 +19,11 @@ import {
   TableStructure,
   DriverInterface, QueryKey,
   QueuePriority,
+  StreamTableData,
 } from '@cubejs-backend/base-driver';
 
 import { QueryQueue, QueryQueueOptions } from './QueryQueue';
+import { QueryStream } from './QueryStream';
 import { ContinueWaitError } from './ContinueWaitError';
 import { LocalCacheDriver } from './LocalCacheDriver';
 import { DriverFactory, DriverFactoryByDataSource } from './DriverFactory';
@@ -762,6 +764,7 @@ export class QueryCache {
     executeFn: (client: BaseDriver, req: any) => any,
     options: Omit<QueryQueueOptions, 'queryHandlers' | 'cancelHandlers'>
   ): QueryQueue {
+    const activeStreams = new Map<string, QueryStream>();
     const queue: any = new QueryQueue(redisPrefix, {
       queryHandlers: {
         metadata: async (req, _setCancelHandle) => {
@@ -811,54 +814,77 @@ export class QueryCache {
       },
       streamHandler: async (req, target) => {
         queue.logger('Streaming SQL', QueryCache.payloadForLog(req));
-        await (new Promise((resolve, reject) => {
-          let logged = false;
-          Promise
-            .all([clientFactory()])
-            .then(([client]) => (<DriverInterface>client).stream(req.query, req.values, { highWaterMark: getEnv('dbQueryStreamHighWaterMark'), requestId: req.requestId }))
-            .then((source) => {
-              const cleanup = async (error) => {
-                if (source.release) {
-                  const toRelease = source.release;
-                  delete source.release;
-                  await toRelease();
-                }
-                if (error && !target.destroyed) {
-                  target.destroy(error);
-                }
-                if (!logged && target.destroyed) {
-                  logged = true;
-                  if (error) {
-                    queue.logger('Streaming done with error', {
-                      query: req.query,
-                      query_values: req.values,
-                      error,
-                    });
-                    reject(error);
-                  } else {
-                    queue.logger('Streaming successfully completed', {
-                      requestId: req.requestId,
-                    });
-                    resolve(req.requestId);
-                  }
-                }
-              };
+        const controller = new AbortController();
+        let source: StreamTableData | undefined;
+        const onError = (error: Error) => controller.abort(error);
+        const onClose = () => {
+          if (!target.writableFinished) {
+            controller.abort(new Error('SQL stream cancelled'));
+          }
+        };
+        // Register before driver setup: stream() can wait for fields behind a
+        // blocked source query. Retain the active target after its first row,
+        // when QueryStream removes itself from the waiting-stream map.
+        activeStreams.set(target.queryKey, target);
+        target.once('error', onError);
+        target.once('close', onClose);
+        if (target.destroyed) {
+          onClose();
+        }
 
-              source.rowStream.once('end', () => cleanup(undefined));
-              source.rowStream.once('error', cleanup);
-              source.rowStream.once('close', () => cleanup(undefined));
-
-              target.once('end', () => cleanup(undefined));
-              target.once('error', cleanup);
-              target.once('close', () => cleanup(undefined));
-
-              source.rowStream.pipe(target);
-            })
-            .catch((reason) => {
-              target.emit('error', reason);
-              resolve(reason);
-            });
-        }));
+        try {
+          const client = await clientFactory();
+          controller.signal.throwIfAborted();
+          source = await (<DriverInterface>client).stream(req.query, req.values, {
+            highWaterMark: getEnv('dbQueryStreamHighWaterMark'),
+            requestId: req.requestId,
+            signal: controller.signal,
+          });
+          controller.signal.throwIfAborted();
+          await new Promise<void>((resolve, reject) => {
+            pipeline(source.rowStream, target, error => (error ? reject(error) : resolve()));
+          });
+          queue.logger('Streaming successfully completed', { requestId: req.requestId });
+          return req.requestId;
+        } catch (error) {
+          controller.abort(error);
+          if (!target.destroyed) {
+            target.destroy(error as Error);
+          }
+          queue.logger('Streaming done with error', {
+            query: req.query,
+            query_values: req.values,
+            error,
+            requestId: req.requestId,
+          });
+          throw error;
+        } finally {
+          try {
+            if (source) {
+              if (source.rowStream instanceof Readable) {
+                source.rowStream.destroy();
+              }
+              if (source.release) {
+                await source.release();
+              }
+            }
+          } finally {
+            if (activeStreams.get(target.queryKey) === target) {
+              activeStreams.delete(target.queryKey);
+            }
+            const removeListeners = () => {
+              target.removeListener('error', onError);
+              target.removeListener('close', onClose);
+            };
+            if (target.closed) {
+              removeListeners();
+            } else {
+              // destroy(error) emits asynchronously. Keep the error handler until
+              // close even when setup failed before pipeline installed its own.
+              target.once('close', removeListeners);
+            }
+          }
+        }
       },
       cancelHandlers: {
         metadata: async (req) => {
@@ -876,9 +902,8 @@ export class QueryCache {
         stream: async (req) => {
           req.queryKey.persistent = true;
           const queryKeyHash = queue.redisHash(req.queryKey);
-          if (queue.streams.has(queryKeyHash)) {
-            queue.streams.get(queryKeyHash).destroy();
-          }
+          const target = activeStreams.get(queryKeyHash) || queue.streams.get(queryKeyHash);
+          target?.destroy();
         },
       },
       logger: (msg, params) => options.logger(msg, params),

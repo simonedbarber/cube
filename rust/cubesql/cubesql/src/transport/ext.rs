@@ -3,7 +3,67 @@ use datafusion::arrow::datatypes::{DataType, TimeUnit};
 use crate::{
     sql::ColumnType,
     transport::{CubeMeta, CubeMetaDimension, CubeMetaMeasure, CubeMetaSegment},
+    CubeError,
 };
+
+/// A member result contract, not its input storage type. In particular SUM may
+/// widen an integer input to Decimal and AVG may change its scale.
+#[derive(serde::Deserialize)]
+#[serde(tag = "kind", deny_unknown_fields)]
+enum NumericResultDeclaration {
+    #[serde(rename = "decimal")]
+    Decimal {
+        precision: usize,
+        scale: usize,
+        arithmetic: String,
+    },
+    #[serde(rename = "integer")]
+    Integer {
+        bits: u8,
+        signed: bool,
+        arithmetic: String,
+    },
+}
+
+pub(super) fn numeric_result_type(
+    member: &str,
+    member_type: &str,
+    meta: Option<&serde_json::Value>,
+) -> Result<Option<ColumnType>, CubeError> {
+    let Some(semantics) = meta.and_then(|meta| meta.get("result_semantics")) else {
+        return Ok(None);
+    };
+    // Existing unknown result semantics need not have a numeric declaration.
+    let Some(numeric) = semantics.get("numeric") else {
+        return Ok(None);
+    };
+    let invalid = || {
+        CubeError::user(format!(
+            "Invalid exact numeric result declaration for {}",
+            member
+        ))
+    };
+    if !member_type.eq_ignore_ascii_case("number") {
+        return Err(invalid());
+    }
+    let declaration: NumericResultDeclaration =
+        serde_json::from_value(numeric.clone()).map_err(|_| invalid())?;
+    match declaration {
+        NumericResultDeclaration::Decimal {
+            precision,
+            scale,
+            arithmetic,
+        } if arithmetic == "exact" && precision >= 1 && precision <= 38 && scale <= precision => {
+            Ok(Some(ColumnType::Decimal(precision, scale)))
+        }
+        NumericResultDeclaration::Integer {
+            bits: 64,
+            signed: true,
+            arithmetic,
+        } if arithmetic == "exact" => Ok(Some(ColumnType::Int64)),
+        _ => Err(invalid()),
+    }
+}
 
 pub trait V1CubeMetaMeasureExt {
     fn get_real_name(&self) -> String;
@@ -101,6 +161,12 @@ impl V1CubeMetaMeasureExt for CubeMetaMeasure {
     }
 
     fn get_sql_type(&self) -> ColumnType {
+        // MetaContext validates all declarations before constructing any schema.
+        if let Some(declared) = numeric_result_type(&self.name, &self.r#type, self.meta.as_ref())
+            .expect("numeric result metadata must be validated before schema construction")
+        {
+            return declared;
+        }
         let from_type = match &self.r#type.to_lowercase().as_str() {
             &"number" => ColumnType::Double,
             &"boolean" => ColumnType::Boolean,
@@ -162,6 +228,11 @@ impl V1CubeMetaDimensionExt for CubeMetaDimension {
     }
 
     fn get_sql_type(&self) -> ColumnType {
+        if let Some(declared) = numeric_result_type(&self.name, &self.r#type, self.meta.as_ref())
+            .expect("numeric result metadata must be validated before schema construction")
+        {
+            return declared;
+        }
         match self.r#type.to_lowercase().as_str() {
             "time" => ColumnType::Timestamp,
             "number" => ColumnType::Double,
@@ -421,8 +492,84 @@ pub fn df_data_type_by_column_type(column_type: ColumnType) -> DataType {
         ColumnType::Int32 | ColumnType::Int64 | ColumnType::Int8 => DataType::Int64,
         ColumnType::String => DataType::Utf8,
         ColumnType::Double => DataType::Float64,
+        ColumnType::Decimal(precision, scale) => DataType::Decimal(precision, scale),
         ColumnType::Boolean => DataType::Boolean,
         ColumnType::Timestamp => DataType::Timestamp(TimeUnit::Nanosecond, None),
         _ => panic!("Unimplemented support for {:?}", column_type),
+    }
+}
+
+#[cfg(test)]
+mod numeric_result_tests {
+    use super::*;
+    use crate::transport::{CubeMetaType, MetaContext};
+    use serde_json::json;
+    use std::collections::HashMap;
+
+    #[test]
+    fn exact_result_types_preserve_aggregate_widening_and_legacy_omission() {
+        let mut measure = CubeMetaMeasure::new("Orders.amount".to_string(), "number".to_string());
+        measure.agg_type = Some("sum".to_string());
+        assert_eq!(measure.get_sql_type(), ColumnType::Double);
+        measure.meta = Some(
+            json!({"result_semantics":{"numeric":{"kind":"decimal","precision":38,"scale":0,"arithmetic":"exact"}}}),
+        );
+        assert_eq!(measure.get_sql_type(), ColumnType::Decimal(38, 0));
+        assert_eq!(
+            df_data_type_by_column_type(measure.get_sql_type()),
+            DataType::Decimal(38, 0)
+        );
+        measure.meta = Some(
+            json!({"result_semantics":{"numeric":{"kind":"integer","bits":64,"signed":true,"arithmetic":"exact"}}}),
+        );
+        assert_eq!(measure.get_sql_type(), ColumnType::Int64);
+        let mut dimension = CubeMetaDimension::new("Orders.id".to_string(), "number".to_string());
+        dimension.meta = measure.meta.clone();
+        assert_eq!(dimension.get_sql_type(), ColumnType::Int64);
+    }
+
+    #[test]
+    fn invalid_exact_declarations_fail_metadata_construction() {
+        let invalids = vec![
+            json!(null),
+            json!({"kind":"decimal","precision":0,"scale":0,"arithmetic":"exact"}),
+            json!({"kind":"decimal","precision":39,"scale":9,"arithmetic":"exact"}),
+            json!({"kind":"decimal","precision":3,"scale":4,"arithmetic":"exact"}),
+            json!({"kind":"decimal","precision":38,"scale":-1,"arithmetic":"exact"}),
+            json!({"kind":"decimal","precision":38,"scale":9,"arithmetic":"approximate"}),
+            json!({"kind":"decimal","precision":38,"scale":9,"arithmetic":"exact","bits":64}),
+            json!({"kind":"integer","bits":32,"signed":true,"arithmetic":"exact"}),
+            json!({"kind":"integer","bits":64,"signed":false,"arithmetic":"exact"}),
+            json!({"kind":"integer","bits":64,"signed":true}),
+        ];
+        for numeric in invalids {
+            for member_type in ["number", "string"] {
+                let mut measure =
+                    CubeMetaMeasure::new("Orders.amount".to_string(), member_type.to_string());
+                measure.meta = Some(json!({"result_semantics":{"numeric":numeric}}));
+                let cube = CubeMeta {
+                    name: "Orders".to_string(),
+                    description: None,
+                    title: None,
+                    r#type: CubeMetaType::Cube,
+                    dimensions: vec![],
+                    measures: vec![measure],
+                    segments: vec![],
+                    joins: None,
+                    folders: None,
+                    nested_folders: None,
+                    hierarchies: None,
+                    meta: None,
+                };
+                assert!(MetaContext::new(
+                    vec![cube],
+                    HashMap::new(),
+                    HashMap::new(),
+                    uuid::Uuid::new_v4()
+                )
+                .is_err());
+            }
+        }
+        assert!(numeric_result_type("Orders.amount", "string", Some(&json!({"result_semantics":{"numeric":{"kind":"integer","bits":64,"signed":true,"arithmetic":"exact"}}}))).is_err());
     }
 }

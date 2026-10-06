@@ -834,14 +834,17 @@ fn get_test_tenant_ctx_with_meta_and_templates(
         })
         .map(|member| (member.clone(), "default".to_string()))
         .collect();
-    Arc::new(MetaContext::new(
-        meta,
-        member_to_data_source,
-        vec![("default".to_string(), sql_generator(custom_templates))]
-            .into_iter()
-            .collect(),
-        Uuid::new_v4(),
-    ))
+    Arc::new(
+        MetaContext::new(
+            meta,
+            member_to_data_source,
+            vec![("default".to_string(), sql_generator(custom_templates))]
+                .into_iter()
+                .collect(),
+            Uuid::new_v4(),
+        )
+        .unwrap(),
+    )
 }
 
 pub fn get_test_tenant_ctx_with_meta(meta: Vec<CubeMeta>) -> Arc<MetaContext> {
@@ -881,12 +884,15 @@ pub fn get_test_tenant_ctx_with_cube_data_sources(
         .map(|data_source| (data_source.clone(), sql_generator(vec![])))
         .collect();
 
-    Arc::new(MetaContext::new(
-        meta,
-        member_to_data_source,
-        data_source_to_sql_generator,
-        Uuid::new_v4(),
-    ))
+    Arc::new(
+        MetaContext::new(
+            meta,
+            member_to_data_source,
+            data_source_to_sql_generator,
+            Uuid::new_v4(),
+        )
+        .unwrap(),
+    )
 }
 
 /// The standard test meta plus `MultiSourceView`, a view over `KibanaSampleDataEcommerce`
@@ -988,12 +994,15 @@ pub fn get_test_tenant_ctx_with_multi_data_source_view_and_templates(
         })
         .collect();
 
-    Arc::new(MetaContext::new(
-        meta,
-        member_to_data_source,
-        data_source_to_sql_generator,
-        Uuid::new_v4(),
-    ))
+    Arc::new(
+        MetaContext::new(
+            meta,
+            member_to_data_source,
+            data_source_to_sql_generator,
+            Uuid::new_v4(),
+        )
+        .unwrap(),
+    )
 }
 
 pub async fn get_test_session(

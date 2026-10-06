@@ -369,14 +369,45 @@ export class PostgresDriver<Config extends PostgresDriverConfiguration = Postgre
   public async stream(
     query: string,
     values: unknown[],
-    { highWaterMark }: StreamOptions
+    { highWaterMark, signal }: StreamOptions
   ): Promise<StreamTableDataWithTypes> {
     PostgresDriver.checkValuesLimit(values);
+    signal?.throwIfAborted();
 
     const conn = await this.pool.acquire();
+    let rowStream: QueryStream | undefined;
+    let disposal: Promise<void> | undefined;
+    const dispose = (cancel: boolean): Promise<void> => {
+      if (!disposal) {
+        disposal = (async () => {
+          if (cancel) {
+            try {
+              await conn.cancelCurrentQuery();
+            } catch (error) {
+              this.databasePoolError(error as Error);
+            } finally {
+              // A cancelled cursor/connection must never be lent to a new query.
+              await this.pool.destroy(conn);
+              rowStream?.destroy();
+            }
+          } else {
+            await this.pool.release(conn);
+          }
+        })();
+      }
+      return disposal;
+    };
+    const onAbort = () => {
+      // The returned stream/release path observes this same disposal promise.
+      // Handle rejection here too, because EventTarget does not await listeners.
+      dispose(true).catch(error => this.databasePoolError(error as Error));
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
 
     try {
+      signal?.throwIfAborted();
       await this.prepareConnection(conn);
+      signal?.throwIfAborted();
 
       const queryStream = new QueryStream(query, values, {
         types: {
@@ -384,19 +415,23 @@ export class PostgresDriver<Config extends PostgresDriverConfiguration = Postgre
         },
         highWaterMark
       });
-      const rowStream: QueryStream = await conn.query(queryStream);
+      rowStream = conn.query(queryStream);
       const fields = await rowStream.fields();
+      signal?.throwIfAborted();
 
       return {
         rowStream,
         types: this.mapFields(fields),
         release: async () => {
-          await this.pool.release(conn);
+          signal?.removeEventListener('abort', onAbort);
+          await dispose(Boolean(signal?.aborted || !rowStream?.readableEnded));
         }
       };
     } catch (e) {
-      await this.pool.release(conn);
+      signal?.removeEventListener('abort', onAbort);
+      await dispose(Boolean(signal?.aborted || (rowStream && !rowStream.readableEnded)));
 
+      signal?.throwIfAborted();
       throw e;
     }
   }

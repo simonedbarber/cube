@@ -116,6 +116,21 @@ impl QueryPlanExt for QueryPlan {
 }
 
 impl AsyncPostgresShim {
+    async fn wait_for_peer_close(socket: &TcpStream) -> std::io::Result<()> {
+        loop {
+            let ready = socket.ready(tokio::io::Interest::READABLE).await?;
+            if ready.is_read_closed() || ready.is_error() {
+                return Ok(());
+            }
+            if socket.peek(&mut [0u8; 1]).await? == 0 {
+                return Ok(());
+            }
+            // Peek preserves protocol ownership. A pipelined message can remain
+            // unread during source work, so yield instead of spinning on it.
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+        }
+    }
+
     async fn flush_and_write_admin_shutdown_fatal_message(
         shim: &mut AsyncPostgresShim,
     ) -> Result<(), ConnectionError> {
@@ -145,6 +160,12 @@ impl AsyncPostgresShim {
         session: Arc<Session>,
         logger: Arc<dyn ContextLogger>,
     ) -> Result<(), ConnectionError> {
+        // The watcher owns another descriptor for the same socket, not another
+        // connection. It never consumes protocol bytes or borrows the shim
+        // while the query future is executing.
+        let std_socket = socket.into_std()?;
+        let peer_socket = TcpStream::from_std(std_socket.try_clone()?)?;
+        let socket = TcpStream::from_std(std_socket)?;
         let mut shim = Self {
             semifast_shutdown_interruptor,
             socket,
@@ -159,6 +180,13 @@ impl AsyncPostgresShim {
             _ = fast_shutdown_interruptor.cancelled() => {
                 Self::flush_and_write_admin_shutdown_fatal_message(&mut shim).await?;
                 shim.socket.shutdown().await?;
+                return Ok(());
+            }
+            closed = Self::wait_for_peer_close(&peer_socket) => {
+                shim.session.state.cancel_query();
+                closed?;
+                // Dropping the query future closes its native stream receiver,
+                // notifying JavaScript to cancel the source stream.
                 return Ok(());
             }
             res = shim.run() => res,
@@ -2076,6 +2104,61 @@ impl AsyncPostgresShim {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    async fn socket_pair() -> (TcpStream, TcpStream) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let (client, server) = tokio::join!(TcpStream::connect(address), listener.accept());
+        (client.unwrap(), server.unwrap().0)
+    }
+
+    #[tokio::test]
+    async fn peer_close_watcher_preserves_protocol_bytes() {
+        use tokio::io::AsyncReadExt;
+        let (mut client, server) = socket_pair().await;
+        let std_socket = server.into_std().unwrap();
+        let watcher = TcpStream::from_std(std_socket.try_clone().unwrap()).unwrap();
+        let mut reader = TcpStream::from_std(std_socket).unwrap();
+        let bytes = b"protocol message";
+        client.write_all(bytes).await.unwrap();
+        let watch = AsyncPostgresShim::wait_for_peer_close(&watcher);
+        tokio::pin!(watch);
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(50), &mut watch)
+                .await
+                .is_err()
+        );
+        let mut received = vec![0; bytes.len()];
+        reader.read_exact(&mut received).await.unwrap();
+        assert_eq!(received, bytes);
+        client.shutdown().await.unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(1), watch)
+            .await
+            .unwrap()
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn peer_close_watcher_detects_eof_with_unread_protocol_bytes() {
+        use tokio::io::AsyncReadExt;
+        let (mut client, server) = socket_pair().await;
+        let std_socket = server.into_std().unwrap();
+        let watcher = TcpStream::from_std(std_socket.try_clone().unwrap()).unwrap();
+        let mut reader = TcpStream::from_std(std_socket).unwrap();
+        let bytes = b"X\0\0\0\x04";
+        client.write_all(bytes).await.unwrap();
+        client.shutdown().await.unwrap();
+        tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            AsyncPostgresShim::wait_for_peer_close(&watcher),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        let mut received = vec![0; bytes.len()];
+        reader.read_exact(&mut received).await.unwrap();
+        assert_eq!(received, bytes);
+    }
 
     #[test]
     fn test_connection_error_mem_size() {

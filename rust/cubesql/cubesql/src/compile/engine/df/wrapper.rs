@@ -311,6 +311,36 @@ impl CubeScanWrappedSqlNode {
             member_fields,
         }
     }
+
+    /// SQL generation caps the root of each buffered source wrapper. Retain
+    /// the distinction between that defensive cap and an authored LIMIT: a
+    /// response which reaches an inserted cap cannot prove complete inputs.
+    /// `wrapped_plan` retains the original root, before the cap is inserted.
+    pub fn buffered_max_records(&self, config_obj: &dyn ConfigObj) -> Option<usize> {
+        if config_obj.stream_mode() {
+            return None;
+        }
+        let cap = config_obj.non_streaming_query_max_row_limit().max(0) as usize;
+        let original_limit = match self.wrapped_plan.as_ref() {
+            LogicalPlan::Extension(Extension { node }) => {
+                if let Some(scan) = node.as_any().downcast_ref::<CubeScanNode>() {
+                    scan.request.limit.map(|limit| limit.max(0) as usize)
+                } else if let Some(select) = node.as_any().downcast_ref::<WrappedSelectNode>() {
+                    select.limit
+                } else if let Some(union) = node.as_any().downcast_ref::<WrappedUnionNode>() {
+                    union.limit
+                } else {
+                    return None;
+                }
+            }
+            _ => return None,
+        };
+        if original_limit.is_none_or(|limit| limit > cap) {
+            Some(cap)
+        } else {
+            None
+        }
+    }
 }
 
 impl UserDefinedLogicalNode for CubeScanWrappedSqlNode {
@@ -1010,6 +1040,7 @@ impl CubeScanWrapperNode {
 
         let mut meta_with_user = load_request_meta.clone();
         meta_with_user.set_change_user(node.options.change_user.clone());
+        meta_with_user.set_sql_order_nulls_first(node.options.sql_order_nulls_first.clone());
 
         // Single CubeScan can represent join of multiple table scans
         // Multiple table scans can have multiple different aliases
@@ -3177,14 +3208,38 @@ impl WrappedSelectNode {
                 sql_query,
             ),
             ScalarValue::Float32(f) => (
-                f.map(|f| format!("{f}")).map_or_else(
+                f.map(|f| {
+                    if !f.is_finite() {
+                        return Err(DataFusionError::NotImplemented(
+                            "Non-finite float literals cannot be rendered portably in pushed SQL"
+                                .to_string(),
+                        ));
+                    }
+                    let data_type =
+                        Self::generate_sql_type(sql_generator.clone(), DataType::Float32)?;
+                    Self::generate_sql_cast_expr(sql_generator.clone(), format!("{f:?}"), data_type)
+                })
+                .transpose()?
+                .map_or_else(
                     || Self::generate_null_for_literal(sql_generator, &literal),
                     Ok,
                 )?,
                 sql_query,
             ),
             ScalarValue::Float64(f) => (
-                f.map(|f| format!("{f}")).map_or_else(
+                f.map(|f| {
+                    if !f.is_finite() {
+                        return Err(DataFusionError::NotImplemented(
+                            "Non-finite float literals cannot be rendered portably in pushed SQL"
+                                .to_string(),
+                        ));
+                    }
+                    let data_type =
+                        Self::generate_sql_type(sql_generator.clone(), DataType::Float64)?;
+                    Self::generate_sql_cast_expr(sql_generator.clone(), format!("{f:?}"), data_type)
+                })
+                .transpose()?
+                .map_or_else(
                     || Self::generate_null_for_literal(sql_generator, &literal),
                     Ok,
                 )?,
@@ -4350,6 +4405,20 @@ impl WrappedSelectNode {
 
         let mut meta_with_user = load_request_meta.as_ref().clone();
         meta_with_user.set_change_user(ungrouped_scan_node.options.change_user.clone());
+        let sql_order_nulls_first = if self.order_expr.is_empty() {
+            ungrouped_scan_node.options.sql_order_nulls_first.clone()
+        } else {
+            self.order_expr
+                .iter()
+                .map(|expr| match expr {
+                    Expr::Sort { nulls_first, .. } => Ok(*nulls_first),
+                    _ => Err(DataFusionError::Execution(
+                        "Expected sort expression for native SQL placement".to_string(),
+                    )),
+                })
+                .collect::<Result<Vec<_>>>()?
+        };
+        meta_with_user.set_sql_order_nulls_first(sql_order_nulls_first);
         let sql_response = transport
             .sql(
                 ungrouped_scan_node.span_id.clone(),
@@ -4876,6 +4945,7 @@ mod tests {
             HashMap::new(),
             uuid::Uuid::new_v4(),
         )
+        .unwrap()
     }
 
     fn cube_scan_node(member_fields: Vec<MemberField>, used_cubes: Vec<String>) -> CubeScanNode {
@@ -4900,6 +4970,7 @@ mod tests {
                 base_path: "path".to_string(),
             }),
             CubeScanOptions {
+                sql_order_nulls_first: vec![],
                 change_user: None,
                 max_records: None,
                 cache_mode: None,
@@ -4908,6 +4979,74 @@ mod tests {
             used_cubes,
             None,
         )
+    }
+
+    #[test]
+    fn buffered_wrapped_roots_preserve_authored_limits_and_streaming() {
+        use crate::config::ConfigObjImpl;
+        let scan = cube_scan_node(
+            vec![MemberField::regular("Orders.status".to_string())],
+            vec!["Orders".to_string()],
+        );
+        let from = Arc::new(LogicalPlan::Extension(Extension {
+            node: Arc::new(scan.clone()),
+        }));
+        for cap in [3, 7] {
+            for limit in [None, Some(cap - 1), Some(cap), Some(cap + 1)] {
+                let mut bounded_scan = scan.clone();
+                bounded_scan.request.limit = limit.map(|value| value as i32);
+                let roots: Vec<Arc<dyn UserDefinedLogicalNode + Send + Sync>> = vec![
+                    Arc::new(bounded_scan),
+                    Arc::new(WrappedSelectNode::new(
+                        scan.schema.clone(),
+                        WrappedSelectType::Projection,
+                        vec![],
+                        vec![],
+                        vec![],
+                        vec![],
+                        vec![],
+                        from.clone(),
+                        vec![],
+                        vec![],
+                        vec![],
+                        limit,
+                        None,
+                        vec![],
+                        None,
+                        false,
+                        false,
+                    )),
+                    Arc::new(WrappedUnionNode::new(
+                        scan.schema.clone(),
+                        vec![from.clone(), from.clone()],
+                        false,
+                        None,
+                        limit,
+                    )),
+                ];
+                for root in roots {
+                    let wrapped = CubeScanWrappedSqlNode::new(
+                        Arc::new(LogicalPlan::Extension(Extension { node: root })),
+                        SqlQuery::new("fixture".to_string(), vec![]),
+                        V1LoadRequestQuery::new(),
+                        vec![],
+                    );
+                    let mut config = ConfigObjImpl::default();
+                    config.stream_mode = false;
+                    config.non_streaming_query_max_row_limit = cap as i32;
+                    assert_eq!(
+                        wrapped.buffered_max_records(&config),
+                        if limit.is_none_or(|value| value > cap) {
+                            Some(cap)
+                        } else {
+                            None
+                        }
+                    );
+                    config.stream_mode = true;
+                    assert_eq!(wrapped.buffered_max_records(&config), None);
+                }
+            }
+        }
     }
 
     /// A plain wrapped `CubeScan` whose columns are all literals has no member to
@@ -4986,5 +5125,43 @@ mod tests {
             }),
             grouping_set: None,
         });
+    }
+    #[test]
+    fn test_float_literal_rendering_preserves_type_and_value() {
+        let generator = crate::compile::test::sql_generator(vec![]);
+        for (value, expected) in [
+            (ScalarValue::Float32(Some(1.0)), "CAST(1.0 AS FLOAT)"),
+            (ScalarValue::Float64(Some(2.0)), "CAST(2.0 AS DOUBLE)"),
+            (ScalarValue::Float64(Some(-0.0)), "CAST(-0.0 AS DOUBLE)"),
+            (ScalarValue::Float64(Some(0.125)), "CAST(0.125 AS DOUBLE)"),
+            (ScalarValue::Float64(Some(1e-20)), "CAST(1e-20 AS DOUBLE)"),
+            (ScalarValue::Float64(None), "CAST(NULL AS DOUBLE)"),
+        ] {
+            let (sql, _) = WrappedSelectNode::generate_sql_for_literal(
+                SqlQuery::new(String::new(), vec![]),
+                generator.clone(),
+                value,
+            )
+            .unwrap();
+            assert_eq!(sql, expected);
+        }
+        for missing in ["expressions/cast", "types/double"] {
+            let unsupported =
+                crate::compile::test::sql_generator(vec![(missing.to_string(), String::new())]);
+            assert!(WrappedSelectNode::generate_sql_for_literal(
+                SqlQuery::new(String::new(), vec![]),
+                unsupported,
+                ScalarValue::Float64(Some(2.0)),
+            )
+            .is_err());
+        }
+        for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert!(WrappedSelectNode::generate_sql_for_literal(
+                SqlQuery::new(String::new(), vec![]),
+                generator.clone(),
+                ScalarValue::Float64(Some(value)),
+            )
+            .is_err());
+        }
     }
 }

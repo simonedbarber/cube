@@ -5,6 +5,16 @@ on:
     paths:
       - '.github/workflows/rust-cubesql.yml'
       - 'packages/cubejs-backend-native/**'
+      - 'packages/cubejs-api-gateway/**'
+      - 'packages/cubejs-server-core/**'
+      - 'packages/cubejs-query-orchestrator/**'
+      - 'packages/cubejs-postgres-driver/**'
+      - 'packages/cubejs-base-driver/**'
+      - 'packages/cubejs-schema-compiler/**'
+      - 'packages/cubejs-testing/package.json'
+      - 'packages/cubejs-testing/tsconfig.json'
+      - 'packages/cubejs-testing/test/native-*-cancellation.test.ts'
+      - 'packages/cubejs-duckdb-driver/test/semantic-sql/fixtures/window-history-canonical-sql.json'
       - 'rust/cube/**'
       - 'rust/cubesql/**'
     branches:
@@ -13,6 +23,16 @@ on:
     paths:
       - '.github/workflows/rust-cubesql.yml'
       - 'packages/cubejs-backend-native/**'
+      - 'packages/cubejs-api-gateway/**'
+      - 'packages/cubejs-server-core/**'
+      - 'packages/cubejs-query-orchestrator/**'
+      - 'packages/cubejs-postgres-driver/**'
+      - 'packages/cubejs-base-driver/**'
+      - 'packages/cubejs-schema-compiler/**'
+      - 'packages/cubejs-testing/package.json'
+      - 'packages/cubejs-testing/tsconfig.json'
+      - 'packages/cubejs-testing/test/native-*-cancellation.test.ts'
+      - 'packages/cubejs-duckdb-driver/test/semantic-sql/fixtures/window-history-canonical-sql.json'
       - 'rust/cube/**'
       - 'rust/cubesql/**'
 
@@ -209,6 +229,10 @@ jobs:
           CUBEJS_NATIVE_INTERNAL_DEBUG: true
         working-directory: ./packages/cubejs-backend-native
         run: yarn run test:unit
+      - name: Test native source cancellation (GNU only)
+        if: (matrix.target == 'x86_64-unknown-linux-gnu')
+        working-directory: ./packages/cubejs-testing
+        run: yarn smoke:native-cancellation
       - name: Run E2E Smoke testing over whole Cube (GNU only)
         if: (matrix.target == 'x86_64-unknown-linux-gnu')
         env:

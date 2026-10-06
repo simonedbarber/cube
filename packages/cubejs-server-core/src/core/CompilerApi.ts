@@ -495,6 +495,9 @@ export class CompilerApi {
     evaluatedQuery: NormalizedQuery,
     context: Context
   ): Promise<{ query: NormalizedQuery; denied: boolean }> {
+    // Every policy-origin fact belongs to this resolution, never a carried
+    // internal query from an earlier context or model revision.
+    delete query.rowLevelFilters;
     const compilers = await this.getCompilers({ requestId: context.requestId });
     const { cubeEvaluator } = compilers;
 
@@ -527,6 +530,7 @@ export class CompilerApi {
     // Per-cube row-level constraints, AND-ed together to form the final RLS
     // filter. Each cube/view contributes a single expression (see below).
     const rlsConstraints: any[] = [];
+    const rowLevelFilters: NonNullable<NormalizedQuery['rowLevelFilters']> = [];
     const maskedMembersSet = new Set<string>();
     const memberMaskFiltersMap: Record<string, any> = {};
 
@@ -763,11 +767,15 @@ export class CompilerApi {
         }
 
         if (memberRowConstraints.length > 0) {
-          rlsConstraints.push(
+          const constraint = this.removeEmptyFilters(
             memberRowConstraints.length === 1
               ? memberRowConstraints[0]
               : { and: memberRowConstraints }
           );
+          if (constraint) {
+            rlsConstraints.push(constraint);
+            rowLevelFilters.push({ cube: cubeName, filter: constraint });
+          }
         }
       }
     }
@@ -794,6 +802,10 @@ export class CompilerApi {
     if (rlsFilter) {
       query.filters = query.filters || [];
       query.filters.push(rlsFilter);
+      // Keep global enforcement in the logical graph for planning and fallback
+      // paths. Current input-origin facts allow the native physical planner to
+      // place a restriction only where it has proved the joined-input owner.
+      query.rowLevelFilters = rowLevelFilters;
     }
     if (maskedMembersSet.size > 0) {
       query.maskedMembers = Array.from(maskedMembersSet).map(member => ({

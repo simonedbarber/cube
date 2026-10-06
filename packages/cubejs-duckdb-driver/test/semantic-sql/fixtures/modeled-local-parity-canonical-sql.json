@@ -1,0 +1,781 @@
+{
+  "description": "Frozen exact MC26 decimal/component targets, authored through the current public compiler; not automatic recipes or admission.",
+  "emissionRevision": 3,
+  "modelSource": "cube('analytics_mc26_ratio', {\n    sql: \"SELECT * FROM analytics_mc26_ratio WHERE channel = 'keep'\",\n    dimensions: { id: { sql: 'id', type: 'number', primary_key: true }, completed: { sql: 'completed', type: 'boolean' } },\n    measures: {\n      completed_count: { type: 'count', filters: [{ sql: `${CUBE}.completed = TRUE` }] },\n      total_count: { type: 'count' },\n      ratio: { type: 'number', sql: `CAST(${completed_count} AS DECIMAL(38,9)) / NULLIF(CAST(${total_count} AS DECIMAL(38,9)), CAST(0 AS DECIMAL(38,9)))` }\n    }\n  });\n  cube('analytics_mc26_share', {\n    sql: \"SELECT * FROM analytics_mc26_share WHERE channel = 'keep'\",\n    dimensions: { id: { sql: 'id', type: 'number', primary_key: true }, region: { sql: 'region', type: 'string' } },\n    measures: {\n      value: { sql: 'amount', type: 'sum' },\n      source_total: { sql: `${value}`, type: 'sum', multi_stage: true, group_by: [] },\n      share: { type: 'number', multi_stage: true, sql: `CAST(${value} AS DECIMAL(38,9)) / NULLIF(CAST(${source_total} AS DECIMAL(38,9)), CAST(0 AS DECIMAL(38,9)))` }\n    }\n  });\n  cube('analytics_mc26_calendar', {\n    sql: \"SELECT * FROM analytics_mc26_calendar WHERE channel = 'keep'\",\n    dimensions: { id: { sql: 'id', type: 'number', primary_key: true }, occurred_at: { sql: 'occurred_at', type: 'time' } },\n    measures: {\n      current: { sql: 'amount', type: 'sum' },\n      prior: { sql: `${current}`, type: 'number', multi_stage: true, time_shift: [{ time_dimension: occurred_at, interval: '1 month', type: 'prior' }] },\n      growth: { type: 'number', multi_stage: true, sql: `(CAST(${current} AS DECIMAL(38,9)) - CAST(${prior} AS DECIMAL(38,9))) / NULLIF(CAST(${prior} AS DECIMAL(38,9)), CAST(0 AS DECIMAL(38,9)))` }\n    }\n  });",
+  "setupSQL": "\n  CREATE TABLE analytics_mc26_ratio(id integer PRIMARY KEY, completed boolean, channel text);\n  INSERT INTO analytics_mc26_ratio SELECT id, id <= 2, 'keep' FROM generate_series(1,10) AS input(id);\n  INSERT INTO analytics_mc26_ratio VALUES (11,TRUE,'exclude');\n  CREATE TABLE analytics_mc26_share(id integer PRIMARY KEY, region text, amount double precision, channel text);\n  INSERT INTO analytics_mc26_share VALUES (1,'A',50,'keep'),(2,'B',150,'keep'),(3,'C',999,'exclude');\n  CREATE TABLE analytics_mc26_calendar(id integer PRIMARY KEY, occurred_at timestamp, amount double precision, channel text);\n  INSERT INTO analytics_mc26_calendar VALUES\n    (1,'2024-01-15',100,'keep'),(2,'2024-02-15',200,'keep'),(3,'2024-03-15',300,'keep'),(4,'2024-02-15',999,'exclude');\n",
+  "cases": [
+    {
+      "id": "MC26-01",
+      "cube": "analytics_mc26_ratio",
+      "kind": "ratio",
+      "expected": [
+        [
+          null,
+          0.2
+        ]
+      ],
+      "sharedCompleted": false,
+      "modeled": {
+        "measures": [
+          "analytics_mc26_ratio.ratio"
+        ],
+        "filters": []
+      },
+      "local": {
+        "filters": [],
+        "calculations": [
+          {
+            "kind": "member",
+            "id": "completed",
+            "path": "analytics_mc26_ratio.completed_count"
+          },
+          {
+            "kind": "member",
+            "id": "total",
+            "path": "analytics_mc26_ratio.total_count"
+          }
+        ],
+        "measures": [
+          {
+            "kind": "sql",
+            "id": "local_value",
+            "stage": "result",
+            "refs": [
+              "completed",
+              "total"
+            ],
+            "valueType": "number",
+            "sql": "CAST(\"completed\" AS DECIMAL(38,9)) / NULLIF(CAST(\"total\" AS DECIMAL(38,9)), CAST(0 AS DECIMAL(38,9)))"
+          }
+        ]
+      },
+      "sourceOracle": "SELECT CAST(COUNT(*) FILTER (WHERE completed) AS DECIMAL(38,9)) / NULLIF(CAST(COUNT(*) AS DECIMAL(38,9)), CAST(0 AS DECIMAL(38,9))) AS value\n        FROM analytics_mc26_ratio WHERE channel='keep'",
+      "owner": "modeled",
+      "query": "SELECT\n  MEASURE(analytics_mc26_ratio.ratio) AS \"analytics_mc26_ratio.ratio\"\n  FROM analytics_mc26_ratio"
+    },
+    {
+      "id": "MC26-01",
+      "cube": "analytics_mc26_ratio",
+      "kind": "ratio",
+      "expected": [
+        [
+          null,
+          0.2
+        ]
+      ],
+      "sharedCompleted": false,
+      "modeled": {
+        "measures": [
+          "analytics_mc26_ratio.ratio"
+        ],
+        "filters": []
+      },
+      "local": {
+        "filters": [],
+        "calculations": [
+          {
+            "kind": "member",
+            "id": "completed",
+            "path": "analytics_mc26_ratio.completed_count"
+          },
+          {
+            "kind": "member",
+            "id": "total",
+            "path": "analytics_mc26_ratio.total_count"
+          }
+        ],
+        "measures": [
+          {
+            "kind": "sql",
+            "id": "local_value",
+            "stage": "result",
+            "refs": [
+              "completed",
+              "total"
+            ],
+            "valueType": "number",
+            "sql": "CAST(\"completed\" AS DECIMAL(38,9)) / NULLIF(CAST(\"total\" AS DECIMAL(38,9)), CAST(0 AS DECIMAL(38,9)))"
+          }
+        ]
+      },
+      "sourceOracle": "SELECT CAST(COUNT(*) FILTER (WHERE completed) AS DECIMAL(38,9)) / NULLIF(CAST(COUNT(*) AS DECIMAL(38,9)), CAST(0 AS DECIMAL(38,9))) AS value\n        FROM analytics_mc26_ratio WHERE channel='keep'",
+      "owner": "local",
+      "query": "WITH base AS (\nSELECT\n  MEASURE(analytics_mc26_ratio.completed_count) AS \"completed\", MEASURE(analytics_mc26_ratio.total_count) AS \"total\"\n  FROM analytics_mc26_ratio\n)\nSELECT\n  CAST(\"completed\" AS DECIMAL(38,9)) / NULLIF(CAST(\"total\" AS DECIMAL(38,9)), CAST(0 AS DECIMAL(38,9))) AS \"local_value\"\n  FROM base"
+    },
+    {
+      "id": "MC26-01-SHARED",
+      "cube": "analytics_mc26_ratio",
+      "kind": "ratio",
+      "expected": [
+        [
+          null,
+          1
+        ]
+      ],
+      "sharedCompleted": true,
+      "modeled": {
+        "measures": [
+          "analytics_mc26_ratio.ratio"
+        ],
+        "filters": [
+          {
+            "member": "analytics_mc26_ratio.completed",
+            "operator": "equals",
+            "values": [
+              "true"
+            ]
+          }
+        ]
+      },
+      "local": {
+        "filters": [
+          {
+            "member": "analytics_mc26_ratio.completed",
+            "operator": "equals",
+            "values": [
+              "true"
+            ]
+          }
+        ],
+        "calculations": [
+          {
+            "kind": "member",
+            "id": "completed",
+            "path": "analytics_mc26_ratio.completed_count"
+          },
+          {
+            "kind": "member",
+            "id": "total",
+            "path": "analytics_mc26_ratio.total_count"
+          }
+        ],
+        "measures": [
+          {
+            "kind": "sql",
+            "id": "local_value",
+            "stage": "result",
+            "refs": [
+              "completed",
+              "total"
+            ],
+            "valueType": "number",
+            "sql": "CAST(\"completed\" AS DECIMAL(38,9)) / NULLIF(CAST(\"total\" AS DECIMAL(38,9)), CAST(0 AS DECIMAL(38,9)))"
+          }
+        ]
+      },
+      "sourceOracle": "SELECT CAST(COUNT(*) FILTER (WHERE completed) AS DECIMAL(38,9)) / NULLIF(CAST(COUNT(*) AS DECIMAL(38,9)), CAST(0 AS DECIMAL(38,9))) AS value\n        FROM analytics_mc26_ratio WHERE channel='keep' AND completed=TRUE",
+      "owner": "modeled",
+      "query": "SELECT\n  MEASURE(analytics_mc26_ratio.ratio) AS \"analytics_mc26_ratio.ratio\"\n  FROM analytics_mc26_ratio\n  WHERE analytics_mc26_ratio.completed = 'true'"
+    },
+    {
+      "id": "MC26-01-SHARED",
+      "cube": "analytics_mc26_ratio",
+      "kind": "ratio",
+      "expected": [
+        [
+          null,
+          1
+        ]
+      ],
+      "sharedCompleted": true,
+      "modeled": {
+        "measures": [
+          "analytics_mc26_ratio.ratio"
+        ],
+        "filters": [
+          {
+            "member": "analytics_mc26_ratio.completed",
+            "operator": "equals",
+            "values": [
+              "true"
+            ]
+          }
+        ]
+      },
+      "local": {
+        "filters": [
+          {
+            "member": "analytics_mc26_ratio.completed",
+            "operator": "equals",
+            "values": [
+              "true"
+            ]
+          }
+        ],
+        "calculations": [
+          {
+            "kind": "member",
+            "id": "completed",
+            "path": "analytics_mc26_ratio.completed_count"
+          },
+          {
+            "kind": "member",
+            "id": "total",
+            "path": "analytics_mc26_ratio.total_count"
+          }
+        ],
+        "measures": [
+          {
+            "kind": "sql",
+            "id": "local_value",
+            "stage": "result",
+            "refs": [
+              "completed",
+              "total"
+            ],
+            "valueType": "number",
+            "sql": "CAST(\"completed\" AS DECIMAL(38,9)) / NULLIF(CAST(\"total\" AS DECIMAL(38,9)), CAST(0 AS DECIMAL(38,9)))"
+          }
+        ]
+      },
+      "sourceOracle": "SELECT CAST(COUNT(*) FILTER (WHERE completed) AS DECIMAL(38,9)) / NULLIF(CAST(COUNT(*) AS DECIMAL(38,9)), CAST(0 AS DECIMAL(38,9))) AS value\n        FROM analytics_mc26_ratio WHERE channel='keep' AND completed=TRUE",
+      "owner": "local",
+      "query": "WITH base AS (\nSELECT\n  MEASURE(analytics_mc26_ratio.completed_count) AS \"completed\", MEASURE(analytics_mc26_ratio.total_count) AS \"total\"\n  FROM analytics_mc26_ratio\n  WHERE analytics_mc26_ratio.completed = 'true'\n)\nSELECT\n  CAST(\"completed\" AS DECIMAL(38,9)) / NULLIF(CAST(\"total\" AS DECIMAL(38,9)), CAST(0 AS DECIMAL(38,9))) AS \"local_value\"\n  FROM base"
+    },
+    {
+      "id": "MC26-02",
+      "cube": "analytics_mc26_share",
+      "kind": "share",
+      "key": "analytics_mc26_share.region",
+      "expected": [
+        [
+          "B",
+          0.75
+        ]
+      ],
+      "modeled": {
+        "dimensions": [
+          "analytics_mc26_share.region"
+        ],
+        "measures": [
+          "analytics_mc26_share.value",
+          "analytics_mc26_share.share"
+        ],
+        "resultOps": {
+          "filters": [
+            {
+              "member": "analytics_mc26_share.value",
+              "operator": "gt",
+              "values": [
+                "100"
+              ]
+            }
+          ],
+          "sort": [
+            {
+              "id": "analytics_mc26_share.region"
+            }
+          ]
+        }
+      },
+      "local": {
+        "dimensions": [
+          "analytics_mc26_share.region"
+        ],
+        "calculations": [
+          {
+            "kind": "scoped",
+            "id": "source_total",
+            "input": "value",
+            "population": "source",
+            "groups": {
+              "mode": "replace",
+              "members": []
+            },
+            "filters": {
+              "mode": "inherit"
+            }
+          }
+        ],
+        "measures": [
+          {
+            "kind": "member",
+            "id": "value",
+            "path": "analytics_mc26_share.value"
+          },
+          {
+            "kind": "sql",
+            "id": "local_value",
+            "stage": "result",
+            "refs": [
+              "value",
+              "source_total"
+            ],
+            "valueType": "number",
+            "sql": "CAST(\"value\" AS DECIMAL(38,9)) / NULLIF(CAST(\"source_total\" AS DECIMAL(38,9)), CAST(0 AS DECIMAL(38,9)))"
+          }
+        ],
+        "resultOps": {
+          "filters": [
+            {
+              "member": "value",
+              "operator": "gt",
+              "values": [
+                "100"
+              ]
+            }
+          ],
+          "sort": [
+            {
+              "id": "analytics_mc26_share.region"
+            }
+          ]
+        }
+      },
+      "sourceOracle": "WITH source AS (SELECT region, SUM(amount) AS value FROM analytics_mc26_share WHERE channel='keep' GROUP BY region)\n      SELECT region, CAST(value AS DECIMAL(38,9))/NULLIF(CAST((SELECT SUM(amount) FROM analytics_mc26_share WHERE channel='keep') AS DECIMAL(38,9)), CAST(0 AS DECIMAL(38,9))) AS value\n      FROM source WHERE value > 100 ORDER BY region",
+      "owner": "modeled",
+      "query": "WITH base AS (\nSELECT\n  analytics_mc26_share.region AS \"analytics_mc26_share.region\", MEASURE(analytics_mc26_share.value) AS \"analytics_mc26_share.value\", MEASURE(analytics_mc26_share.share) AS \"analytics_mc26_share.share\"\n  FROM analytics_mc26_share\n  GROUP BY 1\n),\nfiltered AS (\nSELECT\n  base.\"analytics_mc26_share.region\" AS \"analytics_mc26_share.region\", base.\"analytics_mc26_share.value\" AS \"analytics_mc26_share.value\", base.\"analytics_mc26_share.share\" AS \"analytics_mc26_share.share\"\n  FROM base\n  WHERE base.\"analytics_mc26_share.value\" > '100'\n)\nSELECT\n  filtered.\"analytics_mc26_share.region\" AS \"analytics_mc26_share.region\", filtered.\"analytics_mc26_share.value\" AS \"analytics_mc26_share.value\", filtered.\"analytics_mc26_share.share\" AS \"analytics_mc26_share.share\"\n  FROM filtered\n  ORDER BY \"analytics_mc26_share.region\""
+    },
+    {
+      "id": "MC26-02",
+      "cube": "analytics_mc26_share",
+      "kind": "share",
+      "key": "analytics_mc26_share.region",
+      "expected": [
+        [
+          "B",
+          0.75
+        ]
+      ],
+      "modeled": {
+        "dimensions": [
+          "analytics_mc26_share.region"
+        ],
+        "measures": [
+          "analytics_mc26_share.value",
+          "analytics_mc26_share.share"
+        ],
+        "resultOps": {
+          "filters": [
+            {
+              "member": "analytics_mc26_share.value",
+              "operator": "gt",
+              "values": [
+                "100"
+              ]
+            }
+          ],
+          "sort": [
+            {
+              "id": "analytics_mc26_share.region"
+            }
+          ]
+        }
+      },
+      "local": {
+        "dimensions": [
+          "analytics_mc26_share.region"
+        ],
+        "calculations": [
+          {
+            "kind": "scoped",
+            "id": "source_total",
+            "input": "value",
+            "population": "source",
+            "groups": {
+              "mode": "replace",
+              "members": []
+            },
+            "filters": {
+              "mode": "inherit"
+            }
+          }
+        ],
+        "measures": [
+          {
+            "kind": "member",
+            "id": "value",
+            "path": "analytics_mc26_share.value"
+          },
+          {
+            "kind": "sql",
+            "id": "local_value",
+            "stage": "result",
+            "refs": [
+              "value",
+              "source_total"
+            ],
+            "valueType": "number",
+            "sql": "CAST(\"value\" AS DECIMAL(38,9)) / NULLIF(CAST(\"source_total\" AS DECIMAL(38,9)), CAST(0 AS DECIMAL(38,9)))"
+          }
+        ],
+        "resultOps": {
+          "filters": [
+            {
+              "member": "value",
+              "operator": "gt",
+              "values": [
+                "100"
+              ]
+            }
+          ],
+          "sort": [
+            {
+              "id": "analytics_mc26_share.region"
+            }
+          ]
+        }
+      },
+      "sourceOracle": "WITH source AS (SELECT region, SUM(amount) AS value FROM analytics_mc26_share WHERE channel='keep' GROUP BY region)\n      SELECT region, CAST(value AS DECIMAL(38,9))/NULLIF(CAST((SELECT SUM(amount) FROM analytics_mc26_share WHERE channel='keep') AS DECIMAL(38,9)), CAST(0 AS DECIMAL(38,9))) AS value\n      FROM source WHERE value > 100 ORDER BY region",
+      "owner": "local",
+      "query": "WITH base AS (\nSELECT\n  analytics_mc26_share.region AS \"analytics_mc26_share.region\", MEASURE(analytics_mc26_share.value) AS \"value\"\n  FROM analytics_mc26_share\n  GROUP BY 1\n),\nscope AS (\nSELECT\n  MEASURE(analytics_mc26_share.value) AS \"source_total\"\n  FROM analytics_mc26_share\n),\ncombined AS (\nSELECT\n  base.\"analytics_mc26_share.region\" AS \"analytics_mc26_share.region\", base.\"value\" AS \"value\", scope.\"source_total\" AS \"source_total\"\n  FROM base CROSS JOIN scope\n),\nderived AS (\nSELECT\n  combined.\"analytics_mc26_share.region\" AS \"analytics_mc26_share.region\", combined.\"value\" AS \"value\", combined.\"source_total\" AS \"source_total\", CAST(\"value\" AS DECIMAL(38,9)) / NULLIF(CAST(\"source_total\" AS DECIMAL(38,9)), CAST(0 AS DECIMAL(38,9))) AS \"local_value\"\n  FROM combined\n),\nfiltered AS (\nSELECT\n  derived.\"analytics_mc26_share.region\" AS \"analytics_mc26_share.region\", derived.\"value\" AS \"value\", derived.\"source_total\" AS \"source_total\", derived.\"local_value\" AS \"local_value\"\n  FROM derived\n  WHERE derived.\"value\" > '100'\n)\nSELECT\n  filtered.\"analytics_mc26_share.region\" AS \"analytics_mc26_share.region\", filtered.\"value\" AS \"value\", filtered.\"local_value\" AS \"local_value\"\n  FROM filtered\n  ORDER BY \"analytics_mc26_share.region\""
+    },
+    {
+      "id": "MC26-03",
+      "cube": "analytics_mc26_calendar",
+      "kind": "calendar",
+      "key": "analytics_mc26_calendar.occurred_at",
+      "expected": [
+        [
+          "2024-03",
+          0.5
+        ]
+      ],
+      "modeled": {
+        "timeDimensions": [
+          {
+            "dimension": "analytics_mc26_calendar.occurred_at",
+            "granularity": "month",
+            "dateRange": [
+              "2024-01-01",
+              "2024-03-31"
+            ]
+          }
+        ],
+        "measures": [
+          "analytics_mc26_calendar.current",
+          "analytics_mc26_calendar.growth"
+        ],
+        "resultOps": {
+          "filters": [
+            {
+              "member": "analytics_mc26_calendar.current",
+              "operator": "gt",
+              "values": [
+                "250"
+              ]
+            }
+          ],
+          "sort": [
+            {
+              "id": "analytics_mc26_calendar.occurred_at"
+            }
+          ]
+        }
+      },
+      "local": {
+        "timeDimensions": [
+          {
+            "dimension": "analytics_mc26_calendar.occurred_at",
+            "granularity": "month",
+            "dateRange": [
+              "2024-01-01",
+              "2024-03-31"
+            ]
+          }
+        ],
+        "calculations": [
+          {
+            "kind": "time",
+            "id": "prior",
+            "op": "shift",
+            "input": "current",
+            "offset": {
+              "n": 1,
+              "unit": "month"
+            }
+          }
+        ],
+        "measures": [
+          {
+            "kind": "member",
+            "id": "current",
+            "path": "analytics_mc26_calendar.current"
+          },
+          {
+            "kind": "sql",
+            "id": "local_value",
+            "stage": "result",
+            "refs": [
+              "current",
+              "prior"
+            ],
+            "valueType": "number",
+            "sql": "CAST((CAST(\"current\" AS DECIMAL(38,9))-CAST(\"prior\" AS DECIMAL(38,9))) AS DECIMAL(38,9)) / NULLIF(CAST(\"prior\" AS DECIMAL(38,9)), CAST(0 AS DECIMAL(38,9)))"
+          }
+        ],
+        "resultOps": {
+          "filters": [
+            {
+              "member": "current",
+              "operator": "gt",
+              "values": [
+                "250"
+              ]
+            }
+          ],
+          "sort": [
+            {
+              "id": "analytics_mc26_calendar.occurred_at"
+            }
+          ]
+        }
+      },
+      "sourceOracle": "WITH source AS (SELECT DATE_TRUNC('month', occurred_at) AS bucket, SUM(amount) AS value\n      FROM analytics_mc26_calendar WHERE channel='keep' AND occurred_at >= TIMESTAMP '2024-01-01' AND occurred_at < TIMESTAMP '2024-04-01' GROUP BY 1)\n      SELECT current.bucket, (CAST(current.value AS DECIMAL(38,9))-CAST(prior.value AS DECIMAL(38,9)))/NULLIF(CAST(prior.value AS DECIMAL(38,9)),CAST(0 AS DECIMAL(38,9))) AS value\n      FROM source current LEFT JOIN source prior ON prior.bucket=current.bucket-INTERVAL '1 month' WHERE current.value > 250 ORDER BY current.bucket",
+      "owner": "modeled",
+      "query": "WITH base AS (\nSELECT\n  DATE_TRUNC('month', analytics_mc26_calendar.occurred_at) AS \"analytics_mc26_calendar.occurred_at\", MEASURE(analytics_mc26_calendar.current) AS \"analytics_mc26_calendar.current\", MEASURE(analytics_mc26_calendar.growth) AS \"analytics_mc26_calendar.growth\"\n  FROM analytics_mc26_calendar\n  WHERE (analytics_mc26_calendar.occurred_at >= '2024-01-01' AND analytics_mc26_calendar.occurred_at <= '2024-03-31')\n  GROUP BY 1\n),\nfiltered AS (\nSELECT\n  base.\"analytics_mc26_calendar.occurred_at\" AS \"analytics_mc26_calendar.occurred_at\", base.\"analytics_mc26_calendar.current\" AS \"analytics_mc26_calendar.current\", base.\"analytics_mc26_calendar.growth\" AS \"analytics_mc26_calendar.growth\"\n  FROM base\n  WHERE base.\"analytics_mc26_calendar.current\" > '250'\n)\nSELECT\n  filtered.\"analytics_mc26_calendar.occurred_at\" AS \"analytics_mc26_calendar.occurred_at\", filtered.\"analytics_mc26_calendar.current\" AS \"analytics_mc26_calendar.current\", filtered.\"analytics_mc26_calendar.growth\" AS \"analytics_mc26_calendar.growth\"\n  FROM filtered\n  ORDER BY \"analytics_mc26_calendar.occurred_at\""
+    },
+    {
+      "id": "MC26-03",
+      "cube": "analytics_mc26_calendar",
+      "kind": "calendar",
+      "key": "analytics_mc26_calendar.occurred_at",
+      "expected": [
+        [
+          "2024-03",
+          0.5
+        ]
+      ],
+      "modeled": {
+        "timeDimensions": [
+          {
+            "dimension": "analytics_mc26_calendar.occurred_at",
+            "granularity": "month",
+            "dateRange": [
+              "2024-01-01",
+              "2024-03-31"
+            ]
+          }
+        ],
+        "measures": [
+          "analytics_mc26_calendar.current",
+          "analytics_mc26_calendar.growth"
+        ],
+        "resultOps": {
+          "filters": [
+            {
+              "member": "analytics_mc26_calendar.current",
+              "operator": "gt",
+              "values": [
+                "250"
+              ]
+            }
+          ],
+          "sort": [
+            {
+              "id": "analytics_mc26_calendar.occurred_at"
+            }
+          ]
+        }
+      },
+      "local": {
+        "timeDimensions": [
+          {
+            "dimension": "analytics_mc26_calendar.occurred_at",
+            "granularity": "month",
+            "dateRange": [
+              "2024-01-01",
+              "2024-03-31"
+            ]
+          }
+        ],
+        "calculations": [
+          {
+            "kind": "time",
+            "id": "prior",
+            "op": "shift",
+            "input": "current",
+            "offset": {
+              "n": 1,
+              "unit": "month"
+            }
+          }
+        ],
+        "measures": [
+          {
+            "kind": "member",
+            "id": "current",
+            "path": "analytics_mc26_calendar.current"
+          },
+          {
+            "kind": "sql",
+            "id": "local_value",
+            "stage": "result",
+            "refs": [
+              "current",
+              "prior"
+            ],
+            "valueType": "number",
+            "sql": "CAST((CAST(\"current\" AS DECIMAL(38,9))-CAST(\"prior\" AS DECIMAL(38,9))) AS DECIMAL(38,9)) / NULLIF(CAST(\"prior\" AS DECIMAL(38,9)), CAST(0 AS DECIMAL(38,9)))"
+          }
+        ],
+        "resultOps": {
+          "filters": [
+            {
+              "member": "current",
+              "operator": "gt",
+              "values": [
+                "250"
+              ]
+            }
+          ],
+          "sort": [
+            {
+              "id": "analytics_mc26_calendar.occurred_at"
+            }
+          ]
+        }
+      },
+      "sourceOracle": "WITH source AS (SELECT DATE_TRUNC('month', occurred_at) AS bucket, SUM(amount) AS value\n      FROM analytics_mc26_calendar WHERE channel='keep' AND occurred_at >= TIMESTAMP '2024-01-01' AND occurred_at < TIMESTAMP '2024-04-01' GROUP BY 1)\n      SELECT current.bucket, (CAST(current.value AS DECIMAL(38,9))-CAST(prior.value AS DECIMAL(38,9)))/NULLIF(CAST(prior.value AS DECIMAL(38,9)),CAST(0 AS DECIMAL(38,9))) AS value\n      FROM source current LEFT JOIN source prior ON prior.bucket=current.bucket-INTERVAL '1 month' WHERE current.value > 250 ORDER BY current.bucket",
+      "owner": "local",
+      "query": "WITH base AS (\nSELECT\n  DATE_TRUNC('month', analytics_mc26_calendar.occurred_at) AS \"analytics_mc26_calendar.occurred_at\", MEASURE(analytics_mc26_calendar.current) AS \"current\"\n  FROM analytics_mc26_calendar\n  WHERE (analytics_mc26_calendar.occurred_at >= '2023-12-01' AND analytics_mc26_calendar.occurred_at <= '2024-03-31')\n  GROUP BY 1\n),\ncalendar_keys AS (\nSELECT\n  base.\"analytics_mc26_calendar.occurred_at\" AS \"analytics_mc26_calendar.occurred_at\", base.\"current\" AS \"current\", DATE_ADD(base.\"analytics_mc26_calendar.occurred_at\", INTERVAL '-1 month') AS \"__calendar_1\"\n  FROM base\n),\ncompared AS (\nSELECT\n  t.\"analytics_mc26_calendar.occurred_at\" AS \"analytics_mc26_calendar.occurred_at\", t.\"current\" AS \"current\", cmp_1.\"current\" AS \"prior\"\n  FROM calendar_keys t LEFT JOIN calendar_keys cmp_1 ON cmp_1.\"analytics_mc26_calendar.occurred_at\" = t.\"__calendar_1\"\n  WHERE (t.\"analytics_mc26_calendar.occurred_at\" >= '2024-01-01' AND t.\"analytics_mc26_calendar.occurred_at\" <= '2024-03-31')\n),\nderived AS (\nSELECT\n  compared.\"analytics_mc26_calendar.occurred_at\" AS \"analytics_mc26_calendar.occurred_at\", compared.\"current\" AS \"current\", compared.\"prior\" AS \"prior\", CAST((CAST(\"current\" AS DECIMAL(38,9))-CAST(\"prior\" AS DECIMAL(38,9))) AS DECIMAL(38,9)) / NULLIF(CAST(\"prior\" AS DECIMAL(38,9)), CAST(0 AS DECIMAL(38,9))) AS \"local_value\"\n  FROM compared\n),\nfiltered AS (\nSELECT\n  derived.\"analytics_mc26_calendar.occurred_at\" AS \"analytics_mc26_calendar.occurred_at\", derived.\"current\" AS \"current\", derived.\"prior\" AS \"prior\", derived.\"local_value\" AS \"local_value\"\n  FROM derived\n  WHERE derived.\"current\" > '250'\n)\nSELECT\n  filtered.\"analytics_mc26_calendar.occurred_at\" AS \"analytics_mc26_calendar.occurred_at\", filtered.\"current\" AS \"current\", filtered.\"local_value\" AS \"local_value\"\n  FROM filtered\n  ORDER BY \"analytics_mc26_calendar.occurred_at\""
+    },
+    {
+      "id": "MC26-02-RETAINED",
+      "cube": "analytics_mc26_share",
+      "kind": "share",
+      "key": "analytics_mc26_share.region",
+      "expected": [
+        [
+          "B",
+          1
+        ]
+      ],
+      "input": {
+        "dimensions": [
+          "analytics_mc26_share.region"
+        ],
+        "filters": [
+          {
+            "member": "analytics_mc26_share.value",
+            "operator": "gt",
+            "values": [
+              "100"
+            ]
+          }
+        ],
+        "calculations": [
+          {
+            "kind": "window",
+            "id": "retained_total",
+            "fn": "moving",
+            "agg": "sum",
+            "input": "value",
+            "order": [
+              {
+                "id": "analytics_mc26_share.region"
+              }
+            ],
+            "frame": {
+              "rows": {
+                "preceding": "unbounded",
+                "following": "unbounded"
+              }
+            }
+          }
+        ],
+        "measures": [
+          {
+            "kind": "member",
+            "id": "value",
+            "path": "analytics_mc26_share.value"
+          },
+          {
+            "kind": "sql",
+            "id": "local_value",
+            "stage": "result",
+            "refs": [
+              "value",
+              "retained_total"
+            ],
+            "valueType": "number",
+            "sql": "CAST(\"value\" AS DECIMAL(38,9)) / NULLIF(CAST(\"retained_total\" AS DECIMAL(38,9)), CAST(0 AS DECIMAL(38,9)))"
+          }
+        ],
+        "resultOps": {
+          "sort": [
+            {
+              "id": "analytics_mc26_share.region"
+            }
+          ]
+        }
+      },
+      "sourceOracle": "WITH retained AS (SELECT region, SUM(amount) AS amount FROM analytics_mc26_share\n        WHERE channel='keep' GROUP BY region HAVING SUM(amount)>100)\n        SELECT region, CAST(amount AS DECIMAL(38,9))/NULLIF(CAST((SELECT SUM(amount) FROM retained) AS DECIMAL(38,9)),CAST(0 AS DECIMAL(38,9))) AS value\n        FROM retained ORDER BY region",
+      "owner": "local",
+      "query": "WITH base AS (\nSELECT\n  analytics_mc26_share.region AS \"analytics_mc26_share.region\", MEASURE(analytics_mc26_share.value) AS \"value\"\n  FROM analytics_mc26_share\n  GROUP BY 1\n  HAVING MEASURE(analytics_mc26_share.value) > '100'\n),\nwindowed AS (\nSELECT\n  base.\"analytics_mc26_share.region\" AS \"analytics_mc26_share.region\", base.\"value\" AS \"value\", SUM(base.\"value\") OVER (ORDER BY base.\"analytics_mc26_share.region\" ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS \"retained_total\"\n  FROM base\n)\nSELECT\n  windowed.\"analytics_mc26_share.region\" AS \"analytics_mc26_share.region\", windowed.\"value\" AS \"value\", CAST(\"value\" AS DECIMAL(38,9)) / NULLIF(CAST(\"retained_total\" AS DECIMAL(38,9)), CAST(0 AS DECIMAL(38,9))) AS \"local_value\"\n  FROM windowed\n  ORDER BY \"analytics_mc26_share.region\""
+    },
+    {
+      "id": "MC26-03-BASE-HAVING",
+      "cube": "analytics_mc26_calendar",
+      "kind": "calendar",
+      "key": "analytics_mc26_calendar.occurred_at",
+      "expected": [
+        [
+          "2024-03",
+          null
+        ]
+      ],
+      "input": {
+        "timeDimensions": [
+          {
+            "dimension": "analytics_mc26_calendar.occurred_at",
+            "granularity": "month",
+            "dateRange": [
+              "2024-01-01",
+              "2024-03-31"
+            ]
+          }
+        ],
+        "calculations": [
+          {
+            "kind": "time",
+            "id": "prior",
+            "op": "shift",
+            "input": "current",
+            "offset": {
+              "n": 1,
+              "unit": "month"
+            }
+          }
+        ],
+        "measures": [
+          {
+            "kind": "member",
+            "id": "current",
+            "path": "analytics_mc26_calendar.current"
+          },
+          {
+            "kind": "sql",
+            "id": "local_value",
+            "stage": "result",
+            "refs": [
+              "current",
+              "prior"
+            ],
+            "valueType": "number",
+            "sql": "CAST((CAST(\"current\" AS DECIMAL(38,9))-CAST(\"prior\" AS DECIMAL(38,9))) AS DECIMAL(38,9)) / NULLIF(CAST(\"prior\" AS DECIMAL(38,9)), CAST(0 AS DECIMAL(38,9)))"
+          }
+        ],
+        "resultOps": {
+          "sort": [
+            {
+              "id": "analytics_mc26_calendar.occurred_at"
+            }
+          ]
+        },
+        "filters": [
+          {
+            "member": "analytics_mc26_calendar.current",
+            "operator": "gt",
+            "values": [
+              "250"
+            ]
+          }
+        ]
+      },
+      "sourceOracle": "WITH retained AS (SELECT DATE_TRUNC('month', occurred_at) AS bucket, SUM(amount) AS amount\n        FROM analytics_mc26_calendar WHERE channel='keep' AND occurred_at >= TIMESTAMP '2024-01-01' AND occurred_at < TIMESTAMP '2024-04-01'\n        GROUP BY 1 HAVING SUM(amount)>250)\n        SELECT current.bucket, (CAST(current.amount AS DECIMAL(38,9))-CAST(prior.amount AS DECIMAL(38,9)))/NULLIF(CAST(prior.amount AS DECIMAL(38,9)),CAST(0 AS DECIMAL(38,9))) AS value\n        FROM retained current LEFT JOIN retained prior ON prior.bucket=current.bucket-INTERVAL '1 month' ORDER BY current.bucket",
+      "owner": "local",
+      "query": "WITH base AS (\nSELECT\n  DATE_TRUNC('month', analytics_mc26_calendar.occurred_at) AS \"analytics_mc26_calendar.occurred_at\", MEASURE(analytics_mc26_calendar.current) AS \"current\"\n  FROM analytics_mc26_calendar\n  WHERE (analytics_mc26_calendar.occurred_at >= '2023-12-01' AND analytics_mc26_calendar.occurred_at <= '2024-03-31')\n  GROUP BY 1\n  HAVING MEASURE(analytics_mc26_calendar.current) > '250'\n),\ncalendar_keys AS (\nSELECT\n  base.\"analytics_mc26_calendar.occurred_at\" AS \"analytics_mc26_calendar.occurred_at\", base.\"current\" AS \"current\", DATE_ADD(base.\"analytics_mc26_calendar.occurred_at\", INTERVAL '-1 month') AS \"__calendar_1\"\n  FROM base\n),\ncompared AS (\nSELECT\n  t.\"analytics_mc26_calendar.occurred_at\" AS \"analytics_mc26_calendar.occurred_at\", t.\"current\" AS \"current\", cmp_1.\"current\" AS \"prior\"\n  FROM calendar_keys t LEFT JOIN calendar_keys cmp_1 ON cmp_1.\"analytics_mc26_calendar.occurred_at\" = t.\"__calendar_1\"\n  WHERE (t.\"analytics_mc26_calendar.occurred_at\" >= '2024-01-01' AND t.\"analytics_mc26_calendar.occurred_at\" <= '2024-03-31')\n)\nSELECT\n  compared.\"analytics_mc26_calendar.occurred_at\" AS \"analytics_mc26_calendar.occurred_at\", compared.\"current\" AS \"current\", CAST((CAST(\"current\" AS DECIMAL(38,9))-CAST(\"prior\" AS DECIMAL(38,9))) AS DECIMAL(38,9)) / NULLIF(CAST(\"prior\" AS DECIMAL(38,9)), CAST(0 AS DECIMAL(38,9))) AS \"local_value\"\n  FROM compared\n  ORDER BY \"analytics_mc26_calendar.occurred_at\""
+    }
+  ]
+}

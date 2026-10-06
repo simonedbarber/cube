@@ -199,7 +199,7 @@ pub fn sql4sql(mut cx: FunctionContext) -> JsResult<JsValue> {
         Err(_) => None,
     };
 
-    let services = interface.services.clone();
+    let services = interface.services(&mut cx)?;
     let runtime = tokio_runtime_node(&mut cx)?;
 
     let channel = cx.channel();

@@ -64,6 +64,17 @@ impl<'a> LogicalNodeProcessor<'a, LogicalJoin> for LogicalJoinProcessor<'a> {
             }
 
             for join in logical_join.joins().iter() {
+                let on =
+                    JoinCondition::new_base_join(SqlJoinCondition::try_new(join.on_sql().clone())?);
+                let on = if let Some(filter) = context
+                    .row_level_join_filters
+                    .as_ref()
+                    .and_then(|protected| protected.input_filter(join.cube().cube().name()))
+                {
+                    on.with_input_filter(filter.clone())
+                } else {
+                    on
+                };
                 join_builder.left_join_cube(
                     join.cube().cube().clone(),
                     Some(
@@ -71,7 +82,7 @@ impl<'a> LogicalNodeProcessor<'a, LogicalJoin> for LogicalJoinProcessor<'a> {
                             .cube()
                             .default_alias_with_prefix(&context.alias_prefix),
                     ),
-                    JoinCondition::new_base_join(SqlJoinCondition::try_new(join.on_sql().clone())?),
+                    on,
                 );
                 for dimension_subquery in logical_join
                     .dimension_subqueries()

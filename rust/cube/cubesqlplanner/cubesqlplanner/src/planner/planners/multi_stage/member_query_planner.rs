@@ -82,6 +82,10 @@ impl MultiStageMemberQueryPlanner {
         let cte_query_properties = QueryProperties::builder()
             .query_tools(self.query_tools.clone())
             .time_dimensions(vec![time_dimension.clone()])
+            .dimensions_filters(self.description.state().dimensions_filters().clone())
+            .time_dimensions_filters(self.description.state().time_dimensions_filters().clone())
+            .segments(self.description.state().segments().clone())
+            .query_join_hints(self.query_properties.query_join_hints().clone())
             .ignore_cumulative(true)
             .ungrouped(true)
             .disable_external_pre_aggregations(
@@ -94,9 +98,18 @@ impl MultiStageMemberQueryPlanner {
 
         let source = simple_query_planer.source_and_subquery_dimensions(scope)?;
 
+        // Bounds describe the authorized source population, not the output
+        // groups. Preserve the normalized row filter graph, excluding HAVING.
+        let filter = Rc::new(LogicalFilter {
+            dimensions_filters: self.description.state().dimensions_filters().clone(),
+            time_dimensions_filters: self.description.state().time_dimensions_filters().clone(),
+            segments: self.description.state().segments().clone(),
+            measures_filter: vec![],
+        });
         let result = MultiStageGetDateRange {
             time_dimension: time_dimension.clone(),
             source,
+            filter,
         };
         let member = LogicalMultiStageMember {
             name: self.description.alias().clone(),

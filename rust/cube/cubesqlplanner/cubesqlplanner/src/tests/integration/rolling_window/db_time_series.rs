@@ -151,3 +151,49 @@ async fn test_db_ts_multiple_rolling() {
         insta::assert_snapshot!(result);
     }
 }
+
+#[test]
+fn test_db_ts_derived_range_preserves_row_filter_graph_and_join_members() {
+    let ctx = create_context();
+    let query = indoc! {r#"
+        measures:
+          - orders.rolling_sum_trailing
+        time_dimensions:
+          - dimension: orders.created_at
+            granularity: day
+        filters:
+          - or:
+              - member: orders.status
+                operator: equals
+                values: [completed]
+              - member: customers.city
+                operator: equals
+                values: [Paris]
+          - member: orders.created_at
+            operator: afterDate
+            values: ["2024-01-01"]
+    "#};
+    let sql = ctx.build_sql(query).unwrap();
+    let range = sql.split("time_series AS").next().unwrap();
+    assert!(range.contains("MAX("), "derived range CTE absent: {sql}");
+    assert!(
+        range.contains("WHERE"),
+        "source range omitted row filters: {range}"
+    );
+    assert!(
+        range.contains(" OR "),
+        "source range flattened its Boolean filter: {range}"
+    );
+    assert!(
+        range.contains("status") && range.contains("city"),
+        "source range omitted filtered members: {range}"
+    );
+    assert!(
+        range.contains("JOIN") && range.contains("customers"),
+        "source range omitted filter-required join: {range}"
+    );
+    assert!(
+        range.contains("created_at"),
+        "source time filter missing: {range}"
+    );
+}

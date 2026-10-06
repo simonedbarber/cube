@@ -201,6 +201,7 @@ export class SQLServer {
         return new Promise(async (resolve, reject) => {
           try {
             await this.apiGateway.sqlApiLoad({
+              sqlOrderNullsFirst: request.meta.sqlOrderNullsFirst,
               queryKey,
               query,
               sqlQuery,
@@ -233,6 +234,7 @@ export class SQLServer {
         return new Promise(async (resolve, reject) => {
           try {
             await this.apiGateway.sql({
+              sqlOrderNullsFirst: request.meta.sqlOrderNullsFirst,
               query,
               memberToAlias,
               expressionParams,

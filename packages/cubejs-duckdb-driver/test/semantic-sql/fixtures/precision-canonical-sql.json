@@ -1,0 +1,301 @@
+{
+  "evidenceBoundary": "Frozen unchanged raw-SQL documents and exact independently verified PostgreSQL NUMERIC/BIGINT values from the MC18 pinned-image capture. Native endpoint fixture uses DuckDB as source, not application fallback or PostgreSQL release qualification.",
+  "cases": [
+    {
+      "id": "SYN-MC18-DECIMAL-ARITHMETIC-RESIDUAL-FIRST",
+      "owner": "residual",
+      "query": "SELECT CAST(CAST(0.1 AS DECIMAL(38,9))+CAST(0.2 AS DECIMAL(38,9)) AS DECIMAL(38,9)) AS decimal_sum, CAST(CAST((CAST(0.1 AS DECIMAL(38,9))+CAST(0.2 AS DECIMAL(38,9))) AS DECIMAL(38,9))/NULLIF(CAST(0.3 AS DECIMAL(38,9)),CAST(0 AS DECIMAL(38,9))) AS DECIMAL(38,9)) AS decimal_ratio LIMIT 10",
+      "document": {
+        "version": 3,
+        "scope": {
+          "kind": "data_source",
+          "id": "mc18-exact-precision-fixture"
+        },
+        "body": {
+          "kind": "rawSql",
+          "dialect": "cube_sql",
+          "code": "cte",
+          "statement": "SELECT CAST(CAST(0.1 AS DECIMAL(38,9))+CAST(0.2 AS DECIMAL(38,9)) AS DECIMAL(38,9)) AS decimal_sum, CAST(CAST((CAST(0.1 AS DECIMAL(38,9))+CAST(0.2 AS DECIMAL(38,9))) AS DECIMAL(38,9))/NULLIF(CAST(0.3 AS DECIMAL(38,9)),CAST(0 AS DECIMAL(38,9))) AS DECIMAL(38,9)) AS decimal_ratio LIMIT 10"
+        }
+      },
+      "oracleSql": "-- oracle:mc18_decimal_arithmetic_truth\nSELECT CAST(SUM(lhs)+SUM(rhs) AS NUMERIC(38,9)) AS decimal_sum,CAST((SUM(lhs)+SUM(rhs))/NULLIF(SUM(denominator),0) AS NUMERIC(38,9)) AS decimal_ratio FROM cssql_oracle.analytics_precision_operands WHERE tenant='A' AND lane='arithmetic';",
+      "postgresOracleRows": [
+        {
+          "decimal_sum": "0.300000000",
+          "decimal_ratio": "1.000000000"
+        }
+      ],
+      "expected": [
+        {
+          "decimal_sum": "0.300000000",
+          "decimal_ratio": "1.000000000"
+        }
+      ],
+      "fields": [
+        {
+          "name": "decimal_sum",
+          "dataTypeId": 1700
+        },
+        {
+          "name": "decimal_ratio",
+          "dataTypeId": 1700
+        }
+      ]
+    },
+    {
+      "id": "SYN-MC18-DECIMAL-ARITHMETIC-SOURCE-FIRST",
+      "owner": "source",
+      "query": "SELECT CAST(CAST(MEASURE(analytics_precision_arithmetic.lhs) AS DECIMAL(38,9))+CAST(MEASURE(analytics_precision_arithmetic.rhs) AS DECIMAL(38,9)) AS DECIMAL(38,9)) AS decimal_sum, CAST(CAST((CAST(MEASURE(analytics_precision_arithmetic.lhs) AS DECIMAL(38,9))+CAST(MEASURE(analytics_precision_arithmetic.rhs) AS DECIMAL(38,9))) AS DECIMAL(38,9))/NULLIF(CAST(MEASURE(analytics_precision_arithmetic.denominator) AS DECIMAL(38,9)),CAST(0 AS DECIMAL(38,9))) AS DECIMAL(38,9)) AS decimal_ratio FROM analytics_precision_arithmetic LIMIT 10",
+      "document": {
+        "version": 3,
+        "scope": {
+          "kind": "data_source",
+          "id": "mc18-exact-precision-fixture"
+        },
+        "body": {
+          "kind": "rawSql",
+          "dialect": "cube_sql",
+          "code": "cte",
+          "statement": "SELECT CAST(CAST(MEASURE(analytics_precision_arithmetic.lhs) AS DECIMAL(38,9))+CAST(MEASURE(analytics_precision_arithmetic.rhs) AS DECIMAL(38,9)) AS DECIMAL(38,9)) AS decimal_sum, CAST(CAST((CAST(MEASURE(analytics_precision_arithmetic.lhs) AS DECIMAL(38,9))+CAST(MEASURE(analytics_precision_arithmetic.rhs) AS DECIMAL(38,9))) AS DECIMAL(38,9))/NULLIF(CAST(MEASURE(analytics_precision_arithmetic.denominator) AS DECIMAL(38,9)),CAST(0 AS DECIMAL(38,9))) AS DECIMAL(38,9)) AS decimal_ratio FROM analytics_precision_arithmetic LIMIT 10"
+        }
+      },
+      "oracleSql": "-- oracle:mc18_decimal_arithmetic_truth\nSELECT CAST(SUM(lhs)+SUM(rhs) AS NUMERIC(38,9)) AS decimal_sum,CAST((SUM(lhs)+SUM(rhs))/NULLIF(SUM(denominator),0) AS NUMERIC(38,9)) AS decimal_ratio FROM cssql_oracle.analytics_precision_operands WHERE tenant='A' AND lane='arithmetic';",
+      "postgresOracleRows": [
+        {
+          "decimal_sum": "0.300000000",
+          "decimal_ratio": "1.000000000"
+        }
+      ],
+      "expected": [
+        {
+          "decimal_sum": "0.300000000",
+          "decimal_ratio": "1.000000000"
+        }
+      ],
+      "fields": [
+        {
+          "name": "decimal_sum",
+          "dataTypeId": 1700
+        },
+        {
+          "name": "decimal_ratio",
+          "dataTypeId": 1700
+        }
+      ]
+    },
+    {
+      "id": "SYN-MC18-EXACT-LARGE-INTEGER-RESIDUAL-FIRST",
+      "owner": "residual",
+      "query": "SELECT CAST(9007199254740993 AS BIGINT) AS input_integer, CAST(CAST(9007199254740993 AS DECIMAL(38,9))/NULLIF(CAST(3 AS DECIMAL(38,9)),CAST(0 AS DECIMAL(38,9))) AS DECIMAL(38,9)) AS exact_quotient LIMIT 10",
+      "document": {
+        "version": 3,
+        "scope": {
+          "kind": "data_source",
+          "id": "mc18-exact-precision-fixture"
+        },
+        "body": {
+          "kind": "rawSql",
+          "dialect": "cube_sql",
+          "code": "cte",
+          "statement": "SELECT CAST(9007199254740993 AS BIGINT) AS input_integer, CAST(CAST(9007199254740993 AS DECIMAL(38,9))/NULLIF(CAST(3 AS DECIMAL(38,9)),CAST(0 AS DECIMAL(38,9))) AS DECIMAL(38,9)) AS exact_quotient LIMIT 10"
+        }
+      },
+      "oracleSql": "-- oracle:mc18_exact_large_integer_truth\nSELECT CAST(SUM(large_value) AS BIGINT) AS input_integer,CAST(SUM(large_value)/NULLIF(SUM(denominator),0) AS NUMERIC(38,9)) AS exact_quotient FROM cssql_oracle.analytics_precision_operands WHERE tenant='A' AND lane='large';",
+      "postgresOracleRows": [
+        {
+          "input_integer": "9007199254740993",
+          "exact_quotient": "3002399751580331.000000000"
+        }
+      ],
+      "expected": [
+        {
+          "input_integer": "9007199254740993",
+          "exact_quotient": "3002399751580331.000000000"
+        }
+      ],
+      "fields": [
+        {
+          "name": "input_integer",
+          "dataTypeId": 20
+        },
+        {
+          "name": "exact_quotient",
+          "dataTypeId": 1700
+        }
+      ]
+    },
+    {
+      "id": "SYN-MC18-EXACT-LARGE-INTEGER-SOURCE-FIRST",
+      "owner": "source",
+      "query": "SELECT CAST(MEASURE(analytics_precision_large.large_value) AS BIGINT) AS input_integer, CAST(CAST(MEASURE(analytics_precision_large.large_value) AS DECIMAL(38,9))/NULLIF(CAST(MEASURE(analytics_precision_large.denominator) AS DECIMAL(38,9)),CAST(0 AS DECIMAL(38,9))) AS DECIMAL(38,9)) AS exact_quotient FROM analytics_precision_large LIMIT 10",
+      "document": {
+        "version": 3,
+        "scope": {
+          "kind": "data_source",
+          "id": "mc18-exact-precision-fixture"
+        },
+        "body": {
+          "kind": "rawSql",
+          "dialect": "cube_sql",
+          "code": "cte",
+          "statement": "SELECT CAST(MEASURE(analytics_precision_large.large_value) AS BIGINT) AS input_integer, CAST(CAST(MEASURE(analytics_precision_large.large_value) AS DECIMAL(38,9))/NULLIF(CAST(MEASURE(analytics_precision_large.denominator) AS DECIMAL(38,9)),CAST(0 AS DECIMAL(38,9))) AS DECIMAL(38,9)) AS exact_quotient FROM analytics_precision_large LIMIT 10"
+        }
+      },
+      "oracleSql": "-- oracle:mc18_exact_large_integer_truth\nSELECT CAST(SUM(large_value) AS BIGINT) AS input_integer,CAST(SUM(large_value)/NULLIF(SUM(denominator),0) AS NUMERIC(38,9)) AS exact_quotient FROM cssql_oracle.analytics_precision_operands WHERE tenant='A' AND lane='large';",
+      "postgresOracleRows": [
+        {
+          "input_integer": "9007199254740993",
+          "exact_quotient": "3002399751580331.000000000"
+        }
+      ],
+      "expected": [
+        {
+          "input_integer": "9007199254740993",
+          "exact_quotient": "3002399751580331.000000000"
+        }
+      ],
+      "fields": [
+        {
+          "name": "input_integer",
+          "dataTypeId": 20
+        },
+        {
+          "name": "exact_quotient",
+          "dataTypeId": 1700
+        }
+      ]
+    },
+    {
+      "id": "SYN-MC18-SAFE-DIVISION-RESIDUAL-FIRST",
+      "owner": "residual",
+      "query": "SELECT CAST(1 AS BIGINT) AS id, CAST(CAST(1 AS DECIMAL(38,9))/NULLIF(CAST(2 AS DECIMAL(38,9)),CAST(0 AS DECIMAL(38,9))) AS DECIMAL(38,9)) AS quotient UNION ALL SELECT CAST(2 AS BIGINT) AS id, CAST(CAST(1 AS DECIMAL(38,9))/NULLIF(CAST(0 AS DECIMAL(38,9)),CAST(0 AS DECIMAL(38,9))) AS DECIMAL(38,9)) AS quotient UNION ALL SELECT CAST(3 AS BIGINT) AS id, CAST(CAST(NULL AS DECIMAL(38,9))/NULLIF(CAST(2 AS DECIMAL(38,9)),CAST(0 AS DECIMAL(38,9))) AS DECIMAL(38,9)) AS quotient UNION ALL SELECT CAST(4 AS BIGINT) AS id, CAST(CAST(0 AS DECIMAL(38,9))/NULLIF(CAST(2 AS DECIMAL(38,9)),CAST(0 AS DECIMAL(38,9))) AS DECIMAL(38,9)) AS quotient ORDER BY id LIMIT 10",
+      "document": {
+        "version": 3,
+        "scope": {
+          "kind": "data_source",
+          "id": "mc18-exact-precision-fixture"
+        },
+        "body": {
+          "kind": "rawSql",
+          "dialect": "cube_sql",
+          "code": "cte",
+          "statement": "SELECT CAST(1 AS BIGINT) AS id, CAST(CAST(1 AS DECIMAL(38,9))/NULLIF(CAST(2 AS DECIMAL(38,9)),CAST(0 AS DECIMAL(38,9))) AS DECIMAL(38,9)) AS quotient UNION ALL SELECT CAST(2 AS BIGINT) AS id, CAST(CAST(1 AS DECIMAL(38,9))/NULLIF(CAST(0 AS DECIMAL(38,9)),CAST(0 AS DECIMAL(38,9))) AS DECIMAL(38,9)) AS quotient UNION ALL SELECT CAST(3 AS BIGINT) AS id, CAST(CAST(NULL AS DECIMAL(38,9))/NULLIF(CAST(2 AS DECIMAL(38,9)),CAST(0 AS DECIMAL(38,9))) AS DECIMAL(38,9)) AS quotient UNION ALL SELECT CAST(4 AS BIGINT) AS id, CAST(CAST(0 AS DECIMAL(38,9))/NULLIF(CAST(2 AS DECIMAL(38,9)),CAST(0 AS DECIMAL(38,9))) AS DECIMAL(38,9)) AS quotient ORDER BY id LIMIT 10"
+        }
+      },
+      "oracleSql": "-- oracle:mc18_safe_division_truth\nSELECT CAST(id AS BIGINT) AS id,CAST(numerator/NULLIF(denominator,0) AS NUMERIC(38,9)) AS quotient FROM cssql_oracle.analytics_precision_operands WHERE tenant='A' AND lane='division' ORDER BY id;",
+      "postgresOracleRows": [
+        {
+          "id": "1",
+          "quotient": "0.500000000"
+        },
+        {
+          "id": "2",
+          "quotient": null
+        },
+        {
+          "id": "3",
+          "quotient": null
+        },
+        {
+          "id": "4",
+          "quotient": "0.000000000"
+        }
+      ],
+      "expected": [
+        {
+          "id": "1",
+          "quotient": "0.500000000"
+        },
+        {
+          "id": "2",
+          "quotient": null
+        },
+        {
+          "id": "3",
+          "quotient": null
+        },
+        {
+          "id": "4",
+          "quotient": "0.000000000"
+        }
+      ],
+      "fields": [
+        {
+          "name": "id",
+          "dataTypeId": 20
+        },
+        {
+          "name": "quotient",
+          "dataTypeId": 1700
+        }
+      ]
+    },
+    {
+      "id": "SYN-MC18-SAFE-DIVISION-SOURCE-FIRST",
+      "owner": "source",
+      "query": "SELECT CAST(analytics_precision_division.id AS BIGINT) AS id, CAST(CAST(MEASURE(analytics_precision_division.numerator) AS DECIMAL(38,9))/NULLIF(CAST(MEASURE(analytics_precision_division.denominator) AS DECIMAL(38,9)),CAST(0 AS DECIMAL(38,9))) AS DECIMAL(38,9)) AS quotient FROM analytics_precision_division GROUP BY 1 ORDER BY id LIMIT 10",
+      "document": {
+        "version": 3,
+        "scope": {
+          "kind": "data_source",
+          "id": "mc18-exact-precision-fixture"
+        },
+        "body": {
+          "kind": "rawSql",
+          "dialect": "cube_sql",
+          "code": "cte",
+          "statement": "SELECT CAST(analytics_precision_division.id AS BIGINT) AS id, CAST(CAST(MEASURE(analytics_precision_division.numerator) AS DECIMAL(38,9))/NULLIF(CAST(MEASURE(analytics_precision_division.denominator) AS DECIMAL(38,9)),CAST(0 AS DECIMAL(38,9))) AS DECIMAL(38,9)) AS quotient FROM analytics_precision_division GROUP BY 1 ORDER BY id LIMIT 10"
+        }
+      },
+      "oracleSql": "-- oracle:mc18_safe_division_truth\nSELECT CAST(id AS BIGINT) AS id,CAST(numerator/NULLIF(denominator,0) AS NUMERIC(38,9)) AS quotient FROM cssql_oracle.analytics_precision_operands WHERE tenant='A' AND lane='division' ORDER BY id;",
+      "postgresOracleRows": [
+        {
+          "id": "1",
+          "quotient": "0.500000000"
+        },
+        {
+          "id": "2",
+          "quotient": null
+        },
+        {
+          "id": "3",
+          "quotient": null
+        },
+        {
+          "id": "4",
+          "quotient": "0.000000000"
+        }
+      ],
+      "expected": [
+        {
+          "id": "1",
+          "quotient": "0.500000000"
+        },
+        {
+          "id": "2",
+          "quotient": null
+        },
+        {
+          "id": "3",
+          "quotient": null
+        },
+        {
+          "id": "4",
+          "quotient": "0.000000000"
+        }
+      ],
+      "fields": [
+        {
+          "name": "id",
+          "dataTypeId": 20
+        },
+        {
+          "name": "quotient",
+          "dataTypeId": 1700
+        }
+      ]
+    }
+  ],
+  "modelSource": "cube('analytics_precision_division', {\n  sql: \"SELECT * FROM cssql_oracle.analytics_precision_operands WHERE lane = 'division'\",\n  access_policy: [{ group: 'semantic_analyst', member_level: { includes: '*' }, row_level: { filters: [{ member: 'tenant', operator: 'equals', values: ['A'] }] } }],\n  dimensions: { id: { sql: 'id', type: 'number', primary_key: true, public: true }, tenant: { sql: 'tenant', type: 'string' } },\n  measures: { numerator: { sql: 'numerator', type: 'sum' }, denominator: { sql: 'denominator', type: 'sum' },\n    lhs: { sql: 'lhs', type: 'sum' }, rhs: { sql: 'rhs', type: 'sum' }, large_value: { sql: 'large_value', type: 'sum' } }\n});\ncube('analytics_precision_arithmetic', {\n  sql: \"SELECT * FROM cssql_oracle.analytics_precision_operands WHERE lane = 'arithmetic'\",\n  access_policy: [{ group: 'semantic_analyst', member_level: { includes: '*' }, row_level: { filters: [{ member: 'tenant', operator: 'equals', values: ['A'] }] } }],\n  dimensions: { id: { sql: 'id', type: 'number', primary_key: true, public: true }, tenant: { sql: 'tenant', type: 'string' } },\n  measures: { numerator: { sql: 'numerator', type: 'sum' }, denominator: { sql: 'denominator', type: 'sum' },\n    lhs: { sql: 'lhs', type: 'sum' }, rhs: { sql: 'rhs', type: 'sum' }, large_value: { sql: 'large_value', type: 'sum' } }\n});\ncube('analytics_precision_large', {\n  sql: \"SELECT * FROM cssql_oracle.analytics_precision_operands WHERE lane = 'large'\",\n  access_policy: [{ group: 'semantic_analyst', member_level: { includes: '*' }, row_level: { filters: [{ member: 'tenant', operator: 'equals', values: ['A'] }] } }],\n  dimensions: { id: { sql: 'id', type: 'number', primary_key: true, public: true }, tenant: { sql: 'tenant', type: 'string' } },\n  measures: { numerator: { sql: 'numerator', type: 'sum' }, denominator: { sql: 'denominator', type: 'sum' },\n    lhs: { sql: 'lhs', type: 'sum' }, rhs: { sql: 'rhs', type: 'sum' }, large_value: { sql: 'large_value', type: 'sum' } }\n});",
+  "setupSQL": "CREATE SCHEMA cssql_oracle;\nCREATE TABLE cssql_oracle.analytics_precision_operands (\n  id integer PRIMARY KEY, tenant text NOT NULL, lane text NOT NULL,\n  numerator numeric(38,9), denominator numeric(38,9), lhs numeric(38,9), rhs numeric(38,9), large_value bigint);\nINSERT INTO cssql_oracle.analytics_precision_operands VALUES\n  (1,'A','division',1,2,NULL,NULL,NULL),(2,'A','division',1,0,NULL,NULL,NULL),\n  (3,'A','division',NULL,2,NULL,NULL,NULL),(4,'A','division',0,2,NULL,NULL,NULL),\n  (5,'A','arithmetic',NULL,0.3,0.1,0.2,NULL),(6,'A','large',NULL,3,NULL,NULL,9007199254740993),\n  (101,'B','division',50,2,NULL,NULL,NULL),(105,'B','arithmetic',NULL,0.3,10,20,NULL),\n  (106,'B','large',NULL,3,NULL,NULL,9007199254740996);"
+}

@@ -21,9 +21,24 @@ use crate::CubeError;
 #[derive(Clone, Debug, Serialize)]
 pub struct Column {
     name: String,
+    #[serde(serialize_with = "serialize_column_type")]
     column_type: ColumnType,
     #[serde(skip_serializing)]
     column_flags: ColumnFlags,
+}
+
+pub fn serialize_column_type<S: Serializer>(
+    column_type: &ColumnType,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    match column_type {
+        ColumnType::Decimal(precision, scale) => {
+            serializer.serialize_str(&format!("Decimal({}, {})", precision, scale))
+        }
+        ColumnType::Date(false) => serializer.serialize_str("Date32"),
+        ColumnType::Date(true) => serializer.serialize_str("Date64"),
+        other => other.serialize(serializer),
+    }
 }
 
 impl Column {
@@ -324,7 +339,7 @@ pub fn arrow_to_column_type(arrow_type: DataType) -> Result<ColumnType, CubeErro
         DataType::Boolean => Ok(ColumnType::Boolean),
         DataType::List(field) => Ok(ColumnType::List(field)),
         DataType::Int32 | DataType::UInt32 => Ok(ColumnType::Int32),
-        DataType::Decimal(_, _) => Ok(ColumnType::Int32),
+        DataType::Decimal(precision, scale) => Ok(ColumnType::Decimal(precision, scale)),
         DataType::Int8
         | DataType::Int16
         | DataType::Int64
@@ -600,6 +615,36 @@ pub fn batches_to_dataframe(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_decimal_column_schema_preserves_precision_and_scale() {
+        let column = Column::new(
+            "ratio".to_string(),
+            arrow_to_column_type(DataType::Decimal(38, 9)).unwrap(),
+            ColumnFlags::empty(),
+        );
+        assert_eq!(column.get_type(), ColumnType::Decimal(38, 9));
+        assert_eq!(
+            serde_json::to_value(column).unwrap(),
+            serde_json::json!({ "name": "ratio", "column_type": "Decimal(38, 9)" })
+        );
+    }
+
+    #[test]
+    fn test_date_column_schema_preserves_arrow_width_as_a_scalar_type_name() {
+        for (data_type, type_name) in [(DataType::Date32, "Date32"), (DataType::Date64, "Date64")] {
+            let column = Column::new(
+                "day".to_string(),
+                arrow_to_column_type(data_type.clone()).unwrap(),
+                ColumnFlags::empty(),
+            );
+            assert_eq!(column.get_type().to_arrow(), data_type);
+            assert_eq!(
+                serde_json::to_value(column).unwrap(),
+                serde_json::json!({ "name": "day", "column_type": type_name })
+            );
+        }
+    }
 
     #[test]
     fn test_dataframe_print() {

@@ -120,6 +120,49 @@ SELECT 'C' AS l, t FROM c
     );
 }
 
+#[tokio::test]
+async fn qualified_set_cte_alias_executes_after_union() {
+    init_testing_logger();
+    let expected = execute_query(
+        "SELECT 3.5::float8 AS value".to_string(),
+        DatabaseProtocol::PostgreSQL,
+    )
+    .await
+    .unwrap();
+    for operator in ["UNION", "UNION ALL"] {
+        let query = format!(
+            "WITH grid AS (SELECT 1 AS \"source.key\" {operator} SELECT 2.5 AS \"different.key\") \
+             SELECT SUM(grid.\"source.key\") AS value FROM grid"
+        );
+        assert_eq!(
+            execute_query(query, DatabaseProtocol::PostgreSQL)
+                .await
+                .unwrap(),
+            expected
+        );
+    }
+}
+
+#[tokio::test]
+async fn qualified_set_cte_alias_executes_after_nested_consumer() {
+    init_testing_logger();
+    let expected = execute_query(
+        "SELECT 1::float8 AS value".to_string(),
+        DatabaseProtocol::PostgreSQL,
+    )
+    .await
+    .unwrap();
+    let query = "WITH grid AS ((SELECT 1 AS \"source.key\" UNION SELECT 2.5 AS \"source.key\")), \
+                 attached AS (SELECT grid.\"source.key\" FROM grid) \
+                 SELECT attached.\"source.key\" AS value FROM attached ORDER BY attached.\"source.key\" LIMIT 1";
+    assert_eq!(
+        execute_query(query.to_string(), DatabaseProtocol::PostgreSQL)
+            .await
+            .unwrap(),
+        expected
+    );
+}
+
 /// See https://www.postgresql.org/docs/current/functions-math.html
 #[tokio::test]
 async fn test_round() {

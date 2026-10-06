@@ -1,0 +1,946 @@
+{
+  "singleMeasures": [
+    {
+      "id": "AVERAGE-ONLY",
+      "sql": "SELECT ((CAST(SUM(retained.\"__total_state_sum\") AS DOUBLE PRECISION)) / NULLIF(SUM(retained.\"__total_state_count\"), 0)) AS \"analytics_retained_state.average\" FROM (SELECT\n  analytics_retained_state.region AS \"analytics_retained_state.region\", MEASURE(analytics_retained_state.average) AS \"analytics_retained_state.average\", MEASURE(analytics_retained_state.total) AS \"__total_state_sum\", MEASURE(analytics_retained_state.samples) AS \"__total_state_count\"\n  FROM analytics_retained_state\n  WHERE analytics_retained_state.id < '0' AND analytics_retained_state.region IN ('A', 'B')\n  GROUP BY 1\n  HAVING MEASURE(analytics_retained_state.total) > '0' AND MEASURE(analytics_retained_state.total) <= '100') AS retained",
+      "fields": [
+        {
+          "name": "analytics_retained_state.average",
+          "column_type": "Double"
+        }
+      ],
+      "expected": [
+        [
+          19
+        ]
+      ],
+      "oracleSql": "WITH source AS (SELECT * FROM cssql_oracle.analytics_retained_state WHERE channel='keep' AND id < 0 AND region IN ('A','B')),\n    keys AS (SELECT region FROM source GROUP BY region HAVING SUM(amount) > 0 AND SUM(amount) <= 100)\n    SELECT  AVG(source.amount) AS average, COUNT(DISTINCT source.person) AS people\n    FROM source INNER JOIN keys ON source.region IS NOT DISTINCT FROM keys.region\n    ",
+      "oracleMember": "average"
+    },
+    {
+      "id": "PEOPLE-ONLY",
+      "sql": "WITH retained AS (\nSELECT\n  analytics_retained_state.region AS \"analytics_retained_state.region\", MEASURE(analytics_retained_state.people) AS \"analytics_retained_state.people\"\n  FROM analytics_retained_state\n  WHERE analytics_retained_state.id >= '-12' AND analytics_retained_state.id < '0'\n  GROUP BY 1\n  HAVING MEASURE(analytics_retained_state.total) > '1000'\n),\ncombined AS (\nSELECT COUNT(*) AS __total_group_count FROM retained\n),\njoin_keys AS (\nSELECT\n  retained.\"analytics_retained_state.region\" AS \"analytics_retained_state.region\", retained.\"analytics_retained_state.people\" AS \"analytics_retained_state.people\", COALESCE(CAST(retained.\"analytics_retained_state.region\" AS VARCHAR), '') AS \"__join_value_0\", (retained.\"analytics_retained_state.region\" IS NULL) AS \"__join_null_0\"\n  FROM retained\n),\ndomain AS (\nSELECT\n  analytics_retained_state.region AS \"analytics_retained_state.region\", analytics_retained_state.person AS \"analytics_retained_state.person\"\n  FROM analytics_retained_state\n  WHERE analytics_retained_state.id >= '-12' AND analytics_retained_state.id < '0'\n  GROUP BY 1, 2\n),\njoin_keys_2 AS (\nSELECT\n  domain.\"analytics_retained_state.region\" AS \"analytics_retained_state.region\", domain.\"analytics_retained_state.person\" AS \"analytics_retained_state.person\", COALESCE(CAST(domain.\"analytics_retained_state.region\" AS VARCHAR), '') AS \"__join_value_0\", (domain.\"analytics_retained_state.region\" IS NULL) AS \"__join_null_0\"\n  FROM domain\n),\ndistinct_0 AS (\nSELECT COUNT(DISTINCT domain.\"analytics_retained_state.person\") AS \"analytics_retained_state.people\" FROM join_keys_2 AS domain INNER JOIN join_keys AS selected ON domain.\"__join_value_0\" = selected.\"__join_value_0\" AND domain.\"__join_null_0\" = selected.\"__join_null_0\"\n)\nSELECT distinct_0.\"analytics_retained_state.people\" AS \"analytics_retained_state.people\" FROM combined CROSS JOIN distinct_0",
+      "fields": [
+        {
+          "name": "analytics_retained_state.people",
+          "column_type": "Int64"
+        }
+      ],
+      "expected": [
+        [
+          0
+        ]
+      ],
+      "oracleSql": "WITH source AS (SELECT * FROM cssql_oracle.analytics_retained_state WHERE channel='keep' AND id BETWEEN -12 AND -1),\n    keys AS (SELECT region FROM source GROUP BY region HAVING SUM(amount) > 1000)\n    SELECT  AVG(source.amount) AS average, COUNT(DISTINCT source.person) AS people\n    FROM source INNER JOIN keys ON source.region IS NOT DISTINCT FROM keys.region\n    ",
+      "oracleMember": "people"
+    }
+  ],
+  "controls": [
+    {
+      "id": "AVERAGE-OF-GROUPS",
+      "sql": "WITH retained AS (\nSELECT\n  analytics_retained_state.region AS \"analytics_retained_state.region\", MEASURE(analytics_retained_state.average) AS \"analytics_retained_state.average\", MEASURE(analytics_retained_state.people) AS \"analytics_retained_state.people\", MEASURE(analytics_retained_state.total) AS \"__total_state_sum\", MEASURE(analytics_retained_state.samples) AS \"__total_state_count\"\n  FROM analytics_retained_state\n  WHERE analytics_retained_state.id >= '-12' AND analytics_retained_state.id < '0'\n  GROUP BY 1\n  HAVING MEASURE(analytics_retained_state.total) > '0' AND MEASURE(analytics_retained_state.total) <= '100'\n),\ncombined AS (\nSELECT AVG(retained.\"analytics_retained_state.average\") AS \"analytics_retained_state.average\" FROM retained\n),\njoin_keys AS (\nSELECT\n  retained.\"analytics_retained_state.region\" AS \"analytics_retained_state.region\", retained.\"analytics_retained_state.average\" AS \"analytics_retained_state.average\", retained.\"analytics_retained_state.people\" AS \"analytics_retained_state.people\", retained.\"__total_state_sum\" AS \"__total_state_sum\", retained.\"__total_state_count\" AS \"__total_state_count\", COALESCE(CAST(retained.\"analytics_retained_state.region\" AS VARCHAR), '') AS \"__join_value_0\", (retained.\"analytics_retained_state.region\" IS NULL) AS \"__join_null_0\"\n  FROM retained\n),\ndomain AS (\nSELECT\n  analytics_retained_state.region AS \"analytics_retained_state.region\", analytics_retained_state.person AS \"analytics_retained_state.person\"\n  FROM analytics_retained_state\n  WHERE analytics_retained_state.id >= '-12' AND analytics_retained_state.id < '0'\n  GROUP BY 1, 2\n),\njoin_keys_2 AS (\nSELECT\n  domain.\"analytics_retained_state.region\" AS \"analytics_retained_state.region\", domain.\"analytics_retained_state.person\" AS \"analytics_retained_state.person\", COALESCE(CAST(domain.\"analytics_retained_state.region\" AS VARCHAR), '') AS \"__join_value_0\", (domain.\"analytics_retained_state.region\" IS NULL) AS \"__join_null_0\"\n  FROM domain\n),\ndistinct_0 AS (\nSELECT COUNT(DISTINCT domain.\"analytics_retained_state.person\") AS \"analytics_retained_state.people\" FROM join_keys_2 AS domain INNER JOIN join_keys AS selected ON domain.\"__join_value_0\" = selected.\"__join_value_0\" AND domain.\"__join_null_0\" = selected.\"__join_null_0\"\n)\nSELECT combined.\"analytics_retained_state.average\" AS \"analytics_retained_state.average\", distinct_0.\"analytics_retained_state.people\" AS \"analytics_retained_state.people\" FROM combined CROSS JOIN distinct_0",
+      "expectedWrong": [
+        [
+          55,
+          2
+        ]
+      ],
+      "expectedTotal": [
+        [
+          19,
+          2
+        ]
+      ]
+    },
+    {
+      "id": "SUM-DISTINCT-COUNTS",
+      "sql": "SELECT ((CAST(SUM(retained.\"__total_state_sum\") AS DOUBLE PRECISION)) / NULLIF(SUM(retained.\"__total_state_count\"), 0)) AS \"analytics_retained_state.average\", SUM(retained.\"analytics_retained_state.people\") AS \"analytics_retained_state.people\" FROM (SELECT\n  analytics_retained_state.region AS \"analytics_retained_state.region\", MEASURE(analytics_retained_state.average) AS \"analytics_retained_state.average\", MEASURE(analytics_retained_state.people) AS \"analytics_retained_state.people\", MEASURE(analytics_retained_state.total) AS \"__total_state_sum\", MEASURE(analytics_retained_state.samples) AS \"__total_state_count\"\n  FROM analytics_retained_state\n  WHERE analytics_retained_state.id >= '-12' AND analytics_retained_state.id < '0'\n  GROUP BY 1\n  HAVING MEASURE(analytics_retained_state.total) > '0' AND MEASURE(analytics_retained_state.total) <= '100') AS retained",
+      "expectedWrong": [
+        [
+          19,
+          3
+        ]
+      ],
+      "expectedTotal": [
+        [
+          19,
+          2
+        ]
+      ]
+    }
+  ],
+  "configuredK": 50000,
+  "population": 60001,
+  "cube": "analytics_retained_state",
+  "modelSource": "cube('analytics_retained_state', {\n    sql: \"SELECT * FROM cssql_oracle.analytics_retained_state WHERE channel = 'keep'\",\n    dimensions: { id: { sql: `${CUBE}.id`, type: 'number', primary_key: true, public: true }, region: { sql: `${CUBE}.region`, type: 'string' }, person: { sql: `${CUBE}.person`, type: 'string' } },\n    measures: { average: { sql: `${CUBE}.amount`, type: 'avg', meta: {\"staged\":false,\"rolling\":false,\"time_shifted\":false,\"summarizability\":\"non_additive\"} }, people: { sql: `${CUBE}.person`, type: 'countDistinct', meta: {\"staged\":false,\"rolling\":false,\"time_shifted\":false,\"summarizability\":\"non_additive\"} }, total: { sql: `${CUBE}.amount`, type: 'sum', meta: {\"staged\":false,\"rolling\":false,\"time_shifted\":false,\"summarizability\":\"distributive\"} }, samples: { sql: `${CUBE}.amount`, type: 'count', meta: {\"staged\":false,\"rolling\":false,\"time_shifted\":false,\"summarizability\":\"distributive\"} } }\n  });",
+  "setupSQL": "CREATE SCHEMA cssql_oracle; CREATE TABLE cssql_oracle.analytics_retained_state(id integer PRIMARY KEY, region text, person text, channel text, amount double precision);\n    INSERT INTO cssql_oracle.analytics_retained_state SELECT -id,'A',CASE WHEN id % 2 = 0 THEN 'a' ELSE 'b' END,'keep',10 FROM generate_series(1,9) AS input(id);\n    INSERT INTO cssql_oracle.analytics_retained_state VALUES (-10,'B','b','keep',100),(-11,'C','b','keep',100),(-12,'C','c','keep',100),\n      (-13,'Z',NULL,'keep',NULL),(-14,NULL,'c','keep',50),(-15,'clipped','x','exclude',999),(-16,'A','b','keep',NULL);\n    INSERT INTO cssql_oracle.analytics_retained_state SELECT id, LPAD(id::text,8,'0'),id::text,'keep',1 FROM generate_series(1,60001) AS input(id);",
+  "cases": [
+    {
+      "id": "WEIGHTED-HAVING-PAGE",
+      "input": {
+        "dimensions": [
+          "analytics_retained_state.region"
+        ],
+        "measures": [
+          "analytics_retained_state.average",
+          "analytics_retained_state.people"
+        ],
+        "filters": [
+          {
+            "member": "analytics_retained_state.id",
+            "operator": "gte",
+            "values": [
+              "-12"
+            ]
+          },
+          {
+            "member": "analytics_retained_state.id",
+            "operator": "lt",
+            "values": [
+              "0"
+            ]
+          },
+          {
+            "member": "analytics_retained_state.total",
+            "operator": "gt",
+            "values": [
+              "0"
+            ]
+          },
+          {
+            "member": "analytics_retained_state.total",
+            "operator": "lte",
+            "values": [
+              "100"
+            ]
+          }
+        ],
+        "resultOps": {
+          "sort": [
+            {
+              "id": "analytics_retained_state.region"
+            }
+          ],
+          "page": {
+            "limit": 1
+          }
+        }
+      },
+      "groupKeys": [],
+      "expectedDetail": [
+        [
+          "A",
+          10,
+          2
+        ]
+      ],
+      "expectedTotal": [
+        [
+          19,
+          2
+        ]
+      ],
+      "expectedBaseGroups": 2,
+      "large": false,
+      "oraclePredicate": "id BETWEEN -12 AND -1",
+      "minimum": 0,
+      "maximum": 100,
+      "detail": "WITH base AS (\nSELECT\n  analytics_retained_state.region AS \"analytics_retained_state.region\", MEASURE(analytics_retained_state.average) AS \"analytics_retained_state.average\", MEASURE(analytics_retained_state.people) AS \"analytics_retained_state.people\"\n  FROM analytics_retained_state\n  WHERE analytics_retained_state.id >= '-12' AND analytics_retained_state.id < '0'\n  GROUP BY 1\n  HAVING MEASURE(analytics_retained_state.total) > '0' AND MEASURE(analytics_retained_state.total) <= '100'\n)\nSELECT\n  base.\"analytics_retained_state.region\" AS \"analytics_retained_state.region\", base.\"analytics_retained_state.average\" AS \"analytics_retained_state.average\", base.\"analytics_retained_state.people\" AS \"analytics_retained_state.people\"\n  FROM base\n  ORDER BY \"analytics_retained_state.region\"\n  LIMIT 1",
+      "total": "WITH retained AS (\nSELECT\n  analytics_retained_state.region AS \"analytics_retained_state.region\", MEASURE(analytics_retained_state.average) AS \"analytics_retained_state.average\", MEASURE(analytics_retained_state.people) AS \"analytics_retained_state.people\", MEASURE(analytics_retained_state.total) AS \"__total_state_sum\", MEASURE(analytics_retained_state.samples) AS \"__total_state_count\"\n  FROM analytics_retained_state\n  WHERE analytics_retained_state.id >= '-12' AND analytics_retained_state.id < '0'\n  GROUP BY 1\n  HAVING MEASURE(analytics_retained_state.total) > '0' AND MEASURE(analytics_retained_state.total) <= '100'\n),\ncombined AS (\nSELECT ((CAST(SUM(retained.\"__total_state_sum\") AS DOUBLE PRECISION)) / NULLIF(SUM(retained.\"__total_state_count\"), 0)) AS \"analytics_retained_state.average\" FROM retained\n),\njoin_keys AS (\nSELECT\n  retained.\"analytics_retained_state.region\" AS \"analytics_retained_state.region\", retained.\"analytics_retained_state.average\" AS \"analytics_retained_state.average\", retained.\"analytics_retained_state.people\" AS \"analytics_retained_state.people\", retained.\"__total_state_sum\" AS \"__total_state_sum\", retained.\"__total_state_count\" AS \"__total_state_count\", COALESCE(CAST(retained.\"analytics_retained_state.region\" AS VARCHAR), '') AS \"__join_value_0\", (retained.\"analytics_retained_state.region\" IS NULL) AS \"__join_null_0\"\n  FROM retained\n),\ndomain AS (\nSELECT\n  analytics_retained_state.region AS \"analytics_retained_state.region\", analytics_retained_state.person AS \"analytics_retained_state.person\"\n  FROM analytics_retained_state\n  WHERE analytics_retained_state.id >= '-12' AND analytics_retained_state.id < '0'\n  GROUP BY 1, 2\n),\njoin_keys_2 AS (\nSELECT\n  domain.\"analytics_retained_state.region\" AS \"analytics_retained_state.region\", domain.\"analytics_retained_state.person\" AS \"analytics_retained_state.person\", COALESCE(CAST(domain.\"analytics_retained_state.region\" AS VARCHAR), '') AS \"__join_value_0\", (domain.\"analytics_retained_state.region\" IS NULL) AS \"__join_null_0\"\n  FROM domain\n),\ndistinct_0 AS (\nSELECT COUNT(DISTINCT domain.\"analytics_retained_state.person\") AS \"analytics_retained_state.people\" FROM join_keys_2 AS domain INNER JOIN join_keys AS selected ON domain.\"__join_value_0\" = selected.\"__join_value_0\" AND domain.\"__join_null_0\" = selected.\"__join_null_0\"\n)\nSELECT combined.\"analytics_retained_state.average\" AS \"analytics_retained_state.average\", distinct_0.\"analytics_retained_state.people\" AS \"analytics_retained_state.people\" FROM combined CROSS JOIN distinct_0",
+      "bindings": [
+        {
+          "kind": "average",
+          "member": "analytics_retained_state.average",
+          "sumMember": "analytics_retained_state.total",
+          "countMember": "analytics_retained_state.samples",
+          "sourceMembers": [
+            "analytics_retained_state.average",
+            "analytics_retained_state.id",
+            "analytics_retained_state.people",
+            "analytics_retained_state.person",
+            "analytics_retained_state.region",
+            "analytics_retained_state.samples",
+            "analytics_retained_state.total"
+          ]
+        },
+        {
+          "kind": "distinctDomain",
+          "member": "analytics_retained_state.people",
+          "dimension": "analytics_retained_state.person",
+          "sourceMembers": [
+            "analytics_retained_state.average",
+            "analytics_retained_state.id",
+            "analytics_retained_state.people",
+            "analytics_retained_state.person",
+            "analytics_retained_state.region",
+            "analytics_retained_state.samples",
+            "analytics_retained_state.total"
+          ]
+        }
+      ],
+      "oracleSql": "WITH source AS (SELECT * FROM cssql_oracle.analytics_retained_state WHERE channel='keep' AND id BETWEEN -12 AND -1),\n    keys AS (SELECT region FROM source GROUP BY region HAVING SUM(amount) > 0 AND SUM(amount) <= 100)\n    SELECT  AVG(source.amount) AS average, COUNT(DISTINCT source.person) AS people\n    FROM source INNER JOIN keys ON source.region IS NOT DISTINCT FROM keys.region\n    "
+    },
+    {
+      "id": "EXACT-OVERLAP",
+      "input": {
+        "dimensions": [
+          "analytics_retained_state.region"
+        ],
+        "measures": [
+          "analytics_retained_state.average",
+          "analytics_retained_state.people"
+        ],
+        "filters": [
+          {
+            "member": "analytics_retained_state.id",
+            "operator": "gte",
+            "values": [
+              "-12"
+            ]
+          },
+          {
+            "member": "analytics_retained_state.id",
+            "operator": "lt",
+            "values": [
+              "0"
+            ]
+          },
+          {
+            "member": "analytics_retained_state.total",
+            "operator": "gt",
+            "values": [
+              "0"
+            ]
+          }
+        ],
+        "resultOps": {
+          "sort": [
+            {
+              "id": "analytics_retained_state.region"
+            }
+          ],
+          "page": {
+            "limit": 1
+          }
+        }
+      },
+      "groupKeys": [],
+      "expectedDetail": [
+        [
+          "A",
+          10,
+          2
+        ]
+      ],
+      "expectedTotal": [
+        [
+          32.5,
+          3
+        ]
+      ],
+      "expectedBaseGroups": 3,
+      "large": false,
+      "oraclePredicate": "id BETWEEN -12 AND -1",
+      "minimum": 0,
+      "detail": "WITH base AS (\nSELECT\n  analytics_retained_state.region AS \"analytics_retained_state.region\", MEASURE(analytics_retained_state.average) AS \"analytics_retained_state.average\", MEASURE(analytics_retained_state.people) AS \"analytics_retained_state.people\"\n  FROM analytics_retained_state\n  WHERE analytics_retained_state.id >= '-12' AND analytics_retained_state.id < '0'\n  GROUP BY 1\n  HAVING MEASURE(analytics_retained_state.total) > '0'\n)\nSELECT\n  base.\"analytics_retained_state.region\" AS \"analytics_retained_state.region\", base.\"analytics_retained_state.average\" AS \"analytics_retained_state.average\", base.\"analytics_retained_state.people\" AS \"analytics_retained_state.people\"\n  FROM base\n  ORDER BY \"analytics_retained_state.region\"\n  LIMIT 1",
+      "total": "WITH retained AS (\nSELECT\n  analytics_retained_state.region AS \"analytics_retained_state.region\", MEASURE(analytics_retained_state.average) AS \"analytics_retained_state.average\", MEASURE(analytics_retained_state.people) AS \"analytics_retained_state.people\", MEASURE(analytics_retained_state.total) AS \"__total_state_sum\", MEASURE(analytics_retained_state.samples) AS \"__total_state_count\"\n  FROM analytics_retained_state\n  WHERE analytics_retained_state.id >= '-12' AND analytics_retained_state.id < '0'\n  GROUP BY 1\n  HAVING MEASURE(analytics_retained_state.total) > '0'\n),\ncombined AS (\nSELECT ((CAST(SUM(retained.\"__total_state_sum\") AS DOUBLE PRECISION)) / NULLIF(SUM(retained.\"__total_state_count\"), 0)) AS \"analytics_retained_state.average\" FROM retained\n),\njoin_keys AS (\nSELECT\n  retained.\"analytics_retained_state.region\" AS \"analytics_retained_state.region\", retained.\"analytics_retained_state.average\" AS \"analytics_retained_state.average\", retained.\"analytics_retained_state.people\" AS \"analytics_retained_state.people\", retained.\"__total_state_sum\" AS \"__total_state_sum\", retained.\"__total_state_count\" AS \"__total_state_count\", COALESCE(CAST(retained.\"analytics_retained_state.region\" AS VARCHAR), '') AS \"__join_value_0\", (retained.\"analytics_retained_state.region\" IS NULL) AS \"__join_null_0\"\n  FROM retained\n),\ndomain AS (\nSELECT\n  analytics_retained_state.region AS \"analytics_retained_state.region\", analytics_retained_state.person AS \"analytics_retained_state.person\"\n  FROM analytics_retained_state\n  WHERE analytics_retained_state.id >= '-12' AND analytics_retained_state.id < '0'\n  GROUP BY 1, 2\n),\njoin_keys_2 AS (\nSELECT\n  domain.\"analytics_retained_state.region\" AS \"analytics_retained_state.region\", domain.\"analytics_retained_state.person\" AS \"analytics_retained_state.person\", COALESCE(CAST(domain.\"analytics_retained_state.region\" AS VARCHAR), '') AS \"__join_value_0\", (domain.\"analytics_retained_state.region\" IS NULL) AS \"__join_null_0\"\n  FROM domain\n),\ndistinct_0 AS (\nSELECT COUNT(DISTINCT domain.\"analytics_retained_state.person\") AS \"analytics_retained_state.people\" FROM join_keys_2 AS domain INNER JOIN join_keys AS selected ON domain.\"__join_value_0\" = selected.\"__join_value_0\" AND domain.\"__join_null_0\" = selected.\"__join_null_0\"\n)\nSELECT combined.\"analytics_retained_state.average\" AS \"analytics_retained_state.average\", distinct_0.\"analytics_retained_state.people\" AS \"analytics_retained_state.people\" FROM combined CROSS JOIN distinct_0",
+      "bindings": [
+        {
+          "kind": "average",
+          "member": "analytics_retained_state.average",
+          "sumMember": "analytics_retained_state.total",
+          "countMember": "analytics_retained_state.samples",
+          "sourceMembers": [
+            "analytics_retained_state.average",
+            "analytics_retained_state.id",
+            "analytics_retained_state.people",
+            "analytics_retained_state.person",
+            "analytics_retained_state.region",
+            "analytics_retained_state.samples",
+            "analytics_retained_state.total"
+          ]
+        },
+        {
+          "kind": "distinctDomain",
+          "member": "analytics_retained_state.people",
+          "dimension": "analytics_retained_state.person",
+          "sourceMembers": [
+            "analytics_retained_state.average",
+            "analytics_retained_state.id",
+            "analytics_retained_state.people",
+            "analytics_retained_state.person",
+            "analytics_retained_state.region",
+            "analytics_retained_state.samples",
+            "analytics_retained_state.total"
+          ]
+        }
+      ],
+      "oracleSql": "WITH source AS (SELECT * FROM cssql_oracle.analytics_retained_state WHERE channel='keep' AND id BETWEEN -12 AND -1),\n    keys AS (SELECT region FROM source GROUP BY region HAVING SUM(amount) > 0)\n    SELECT  AVG(source.amount) AS average, COUNT(DISTINCT source.person) AS people\n    FROM source INNER JOIN keys ON source.region IS NOT DISTINCT FROM keys.region\n    "
+    },
+    {
+      "id": "EMPTY-DETAIL",
+      "input": {
+        "dimensions": [
+          "analytics_retained_state.region"
+        ],
+        "measures": [
+          "analytics_retained_state.average",
+          "analytics_retained_state.people"
+        ],
+        "filters": [
+          {
+            "member": "analytics_retained_state.id",
+            "operator": "gte",
+            "values": [
+              "-12"
+            ]
+          },
+          {
+            "member": "analytics_retained_state.id",
+            "operator": "lt",
+            "values": [
+              "0"
+            ]
+          },
+          {
+            "member": "analytics_retained_state.total",
+            "operator": "gt",
+            "values": [
+              "0"
+            ]
+          },
+          {
+            "member": "analytics_retained_state.total",
+            "operator": "lte",
+            "values": [
+              "100"
+            ]
+          }
+        ],
+        "resultOps": {
+          "sort": [
+            {
+              "id": "analytics_retained_state.region"
+            }
+          ],
+          "page": {
+            "limit": 1,
+            "offset": 100
+          }
+        }
+      },
+      "groupKeys": [],
+      "expectedDetail": [],
+      "expectedTotal": [
+        [
+          19,
+          2
+        ]
+      ],
+      "expectedBaseGroups": 2,
+      "large": false,
+      "oraclePredicate": "id BETWEEN -12 AND -1",
+      "minimum": 0,
+      "maximum": 100,
+      "detail": "WITH base AS (\nSELECT\n  analytics_retained_state.region AS \"analytics_retained_state.region\", MEASURE(analytics_retained_state.average) AS \"analytics_retained_state.average\", MEASURE(analytics_retained_state.people) AS \"analytics_retained_state.people\"\n  FROM analytics_retained_state\n  WHERE analytics_retained_state.id >= '-12' AND analytics_retained_state.id < '0'\n  GROUP BY 1\n  HAVING MEASURE(analytics_retained_state.total) > '0' AND MEASURE(analytics_retained_state.total) <= '100'\n)\nSELECT\n  base.\"analytics_retained_state.region\" AS \"analytics_retained_state.region\", base.\"analytics_retained_state.average\" AS \"analytics_retained_state.average\", base.\"analytics_retained_state.people\" AS \"analytics_retained_state.people\"\n  FROM base\n  ORDER BY \"analytics_retained_state.region\"\n  LIMIT 1\n  OFFSET 100",
+      "total": "WITH retained AS (\nSELECT\n  analytics_retained_state.region AS \"analytics_retained_state.region\", MEASURE(analytics_retained_state.average) AS \"analytics_retained_state.average\", MEASURE(analytics_retained_state.people) AS \"analytics_retained_state.people\", MEASURE(analytics_retained_state.total) AS \"__total_state_sum\", MEASURE(analytics_retained_state.samples) AS \"__total_state_count\"\n  FROM analytics_retained_state\n  WHERE analytics_retained_state.id >= '-12' AND analytics_retained_state.id < '0'\n  GROUP BY 1\n  HAVING MEASURE(analytics_retained_state.total) > '0' AND MEASURE(analytics_retained_state.total) <= '100'\n),\ncombined AS (\nSELECT ((CAST(SUM(retained.\"__total_state_sum\") AS DOUBLE PRECISION)) / NULLIF(SUM(retained.\"__total_state_count\"), 0)) AS \"analytics_retained_state.average\" FROM retained\n),\njoin_keys AS (\nSELECT\n  retained.\"analytics_retained_state.region\" AS \"analytics_retained_state.region\", retained.\"analytics_retained_state.average\" AS \"analytics_retained_state.average\", retained.\"analytics_retained_state.people\" AS \"analytics_retained_state.people\", retained.\"__total_state_sum\" AS \"__total_state_sum\", retained.\"__total_state_count\" AS \"__total_state_count\", COALESCE(CAST(retained.\"analytics_retained_state.region\" AS VARCHAR), '') AS \"__join_value_0\", (retained.\"analytics_retained_state.region\" IS NULL) AS \"__join_null_0\"\n  FROM retained\n),\ndomain AS (\nSELECT\n  analytics_retained_state.region AS \"analytics_retained_state.region\", analytics_retained_state.person AS \"analytics_retained_state.person\"\n  FROM analytics_retained_state\n  WHERE analytics_retained_state.id >= '-12' AND analytics_retained_state.id < '0'\n  GROUP BY 1, 2\n),\njoin_keys_2 AS (\nSELECT\n  domain.\"analytics_retained_state.region\" AS \"analytics_retained_state.region\", domain.\"analytics_retained_state.person\" AS \"analytics_retained_state.person\", COALESCE(CAST(domain.\"analytics_retained_state.region\" AS VARCHAR), '') AS \"__join_value_0\", (domain.\"analytics_retained_state.region\" IS NULL) AS \"__join_null_0\"\n  FROM domain\n),\ndistinct_0 AS (\nSELECT COUNT(DISTINCT domain.\"analytics_retained_state.person\") AS \"analytics_retained_state.people\" FROM join_keys_2 AS domain INNER JOIN join_keys AS selected ON domain.\"__join_value_0\" = selected.\"__join_value_0\" AND domain.\"__join_null_0\" = selected.\"__join_null_0\"\n)\nSELECT combined.\"analytics_retained_state.average\" AS \"analytics_retained_state.average\", distinct_0.\"analytics_retained_state.people\" AS \"analytics_retained_state.people\" FROM combined CROSS JOIN distinct_0",
+      "bindings": [
+        {
+          "kind": "average",
+          "member": "analytics_retained_state.average",
+          "sumMember": "analytics_retained_state.total",
+          "countMember": "analytics_retained_state.samples",
+          "sourceMembers": [
+            "analytics_retained_state.average",
+            "analytics_retained_state.id",
+            "analytics_retained_state.people",
+            "analytics_retained_state.person",
+            "analytics_retained_state.region",
+            "analytics_retained_state.samples",
+            "analytics_retained_state.total"
+          ]
+        },
+        {
+          "kind": "distinctDomain",
+          "member": "analytics_retained_state.people",
+          "dimension": "analytics_retained_state.person",
+          "sourceMembers": [
+            "analytics_retained_state.average",
+            "analytics_retained_state.id",
+            "analytics_retained_state.people",
+            "analytics_retained_state.person",
+            "analytics_retained_state.region",
+            "analytics_retained_state.samples",
+            "analytics_retained_state.total"
+          ]
+        }
+      ],
+      "oracleSql": "WITH source AS (SELECT * FROM cssql_oracle.analytics_retained_state WHERE channel='keep' AND id BETWEEN -12 AND -1),\n    keys AS (SELECT region FROM source GROUP BY region HAVING SUM(amount) > 0 AND SUM(amount) <= 100)\n    SELECT  AVG(source.amount) AS average, COUNT(DISTINCT source.person) AS people\n    FROM source INNER JOIN keys ON source.region IS NOT DISTINCT FROM keys.region\n    "
+    },
+    {
+      "id": "SUBTOTAL",
+      "input": {
+        "dimensions": [
+          "analytics_retained_state.region"
+        ],
+        "measures": [
+          "analytics_retained_state.average",
+          "analytics_retained_state.people"
+        ],
+        "filters": [
+          {
+            "member": "analytics_retained_state.id",
+            "operator": "gte",
+            "values": [
+              "-12"
+            ]
+          },
+          {
+            "member": "analytics_retained_state.id",
+            "operator": "lt",
+            "values": [
+              "0"
+            ]
+          },
+          {
+            "member": "analytics_retained_state.total",
+            "operator": "gt",
+            "values": [
+              "0"
+            ]
+          },
+          {
+            "member": "analytics_retained_state.total",
+            "operator": "lte",
+            "values": [
+              "100"
+            ]
+          }
+        ],
+        "resultOps": {
+          "sort": [
+            {
+              "id": "analytics_retained_state.region"
+            }
+          ],
+          "page": {
+            "limit": 1
+          }
+        }
+      },
+      "groupKeys": [
+        "analytics_retained_state.region"
+      ],
+      "expectedDetail": [
+        [
+          "A",
+          10,
+          2
+        ]
+      ],
+      "expectedTotal": [
+        [
+          "A",
+          10,
+          2
+        ],
+        [
+          "B",
+          100,
+          1
+        ]
+      ],
+      "expectedBaseGroups": 2,
+      "large": false,
+      "oraclePredicate": "id BETWEEN -12 AND -1",
+      "minimum": 0,
+      "maximum": 100,
+      "detail": "WITH base AS (\nSELECT\n  analytics_retained_state.region AS \"analytics_retained_state.region\", MEASURE(analytics_retained_state.average) AS \"analytics_retained_state.average\", MEASURE(analytics_retained_state.people) AS \"analytics_retained_state.people\"\n  FROM analytics_retained_state\n  WHERE analytics_retained_state.id >= '-12' AND analytics_retained_state.id < '0'\n  GROUP BY 1\n  HAVING MEASURE(analytics_retained_state.total) > '0' AND MEASURE(analytics_retained_state.total) <= '100'\n)\nSELECT\n  base.\"analytics_retained_state.region\" AS \"analytics_retained_state.region\", base.\"analytics_retained_state.average\" AS \"analytics_retained_state.average\", base.\"analytics_retained_state.people\" AS \"analytics_retained_state.people\"\n  FROM base\n  ORDER BY \"analytics_retained_state.region\"\n  LIMIT 1",
+      "total": "WITH retained AS (\nSELECT\n  analytics_retained_state.region AS \"analytics_retained_state.region\", MEASURE(analytics_retained_state.average) AS \"analytics_retained_state.average\", MEASURE(analytics_retained_state.people) AS \"analytics_retained_state.people\", MEASURE(analytics_retained_state.total) AS \"__total_state_sum\", MEASURE(analytics_retained_state.samples) AS \"__total_state_count\"\n  FROM analytics_retained_state\n  WHERE analytics_retained_state.id >= '-12' AND analytics_retained_state.id < '0'\n  GROUP BY 1\n  HAVING MEASURE(analytics_retained_state.total) > '0' AND MEASURE(analytics_retained_state.total) <= '100'\n),\ncombined AS (\nSELECT retained.\"analytics_retained_state.region\" AS \"analytics_retained_state.region\", ((CAST(SUM(retained.\"__total_state_sum\") AS DOUBLE PRECISION)) / NULLIF(SUM(retained.\"__total_state_count\"), 0)) AS \"analytics_retained_state.average\" FROM retained GROUP BY retained.\"analytics_retained_state.region\"\n),\njoin_keys AS (\nSELECT\n  retained.\"analytics_retained_state.region\" AS \"analytics_retained_state.region\", retained.\"analytics_retained_state.average\" AS \"analytics_retained_state.average\", retained.\"analytics_retained_state.people\" AS \"analytics_retained_state.people\", retained.\"__total_state_sum\" AS \"__total_state_sum\", retained.\"__total_state_count\" AS \"__total_state_count\", COALESCE(CAST(retained.\"analytics_retained_state.region\" AS VARCHAR), '') AS \"__join_value_0\", (retained.\"analytics_retained_state.region\" IS NULL) AS \"__join_null_0\"\n  FROM retained\n),\njoin_keys_2 AS (\nSELECT\n  combined.\"analytics_retained_state.region\" AS \"analytics_retained_state.region\", combined.\"analytics_retained_state.average\" AS \"analytics_retained_state.average\", COALESCE(CAST(combined.\"analytics_retained_state.region\" AS VARCHAR), '') AS \"__join_value_0\", (combined.\"analytics_retained_state.region\" IS NULL) AS \"__join_null_0\"\n  FROM combined\n),\ndomain AS (\nSELECT\n  analytics_retained_state.region AS \"analytics_retained_state.region\", analytics_retained_state.person AS \"analytics_retained_state.person\"\n  FROM analytics_retained_state\n  WHERE analytics_retained_state.id >= '-12' AND analytics_retained_state.id < '0'\n  GROUP BY 1, 2\n),\njoin_keys_3 AS (\nSELECT\n  domain.\"analytics_retained_state.region\" AS \"analytics_retained_state.region\", domain.\"analytics_retained_state.person\" AS \"analytics_retained_state.person\", COALESCE(CAST(domain.\"analytics_retained_state.region\" AS VARCHAR), '') AS \"__join_value_0\", (domain.\"analytics_retained_state.region\" IS NULL) AS \"__join_null_0\"\n  FROM domain\n),\ndistinct_0 AS (\nSELECT selected.\"analytics_retained_state.region\" AS \"analytics_retained_state.region\", COUNT(DISTINCT domain.\"analytics_retained_state.person\") AS \"analytics_retained_state.people\" FROM join_keys_3 AS domain INNER JOIN join_keys AS selected ON domain.\"__join_value_0\" = selected.\"__join_value_0\" AND domain.\"__join_null_0\" = selected.\"__join_null_0\" GROUP BY selected.\"analytics_retained_state.region\"\n),\njoin_keys_4 AS (\nSELECT\n  distinct_0.\"analytics_retained_state.region\" AS \"analytics_retained_state.region\", distinct_0.\"analytics_retained_state.people\" AS \"analytics_retained_state.people\", COALESCE(CAST(distinct_0.\"analytics_retained_state.region\" AS VARCHAR), '') AS \"__join_value_0\", (distinct_0.\"analytics_retained_state.region\" IS NULL) AS \"__join_null_0\"\n  FROM distinct_0\n)\nSELECT join_keys_2.\"analytics_retained_state.region\" AS \"analytics_retained_state.region\", join_keys_2.\"analytics_retained_state.average\" AS \"analytics_retained_state.average\", join_keys_4.\"analytics_retained_state.people\" AS \"analytics_retained_state.people\" FROM join_keys_2 LEFT JOIN join_keys_4 ON join_keys_2.\"__join_value_0\" = join_keys_4.\"__join_value_0\" AND join_keys_2.\"__join_null_0\" = join_keys_4.\"__join_null_0\"",
+      "bindings": [
+        {
+          "kind": "average",
+          "member": "analytics_retained_state.average",
+          "sumMember": "analytics_retained_state.total",
+          "countMember": "analytics_retained_state.samples",
+          "sourceMembers": [
+            "analytics_retained_state.average",
+            "analytics_retained_state.id",
+            "analytics_retained_state.people",
+            "analytics_retained_state.person",
+            "analytics_retained_state.region",
+            "analytics_retained_state.samples",
+            "analytics_retained_state.total"
+          ]
+        },
+        {
+          "kind": "distinctDomain",
+          "member": "analytics_retained_state.people",
+          "dimension": "analytics_retained_state.person",
+          "sourceMembers": [
+            "analytics_retained_state.average",
+            "analytics_retained_state.id",
+            "analytics_retained_state.people",
+            "analytics_retained_state.person",
+            "analytics_retained_state.region",
+            "analytics_retained_state.samples",
+            "analytics_retained_state.total"
+          ]
+        }
+      ],
+      "oracleSql": "WITH source AS (SELECT * FROM cssql_oracle.analytics_retained_state WHERE channel='keep' AND id BETWEEN -12 AND -1),\n    keys AS (SELECT region FROM source GROUP BY region HAVING SUM(amount) > 0 AND SUM(amount) <= 100)\n    SELECT source.region, AVG(source.amount) AS average, COUNT(DISTINCT source.person) AS people\n    FROM source INNER JOIN keys ON source.region IS NOT DISTINCT FROM keys.region\n    GROUP BY source.region ORDER BY source.region"
+    },
+    {
+      "id": "MIXED-NULL-SAMPLES",
+      "input": {
+        "dimensions": [
+          "analytics_retained_state.region"
+        ],
+        "measures": [
+          "analytics_retained_state.average",
+          "analytics_retained_state.people"
+        ],
+        "filters": [
+          {
+            "member": "analytics_retained_state.id",
+            "operator": "lt",
+            "values": [
+              "0"
+            ]
+          },
+          {
+            "member": "analytics_retained_state.region",
+            "operator": "equals",
+            "values": [
+              "A",
+              "B"
+            ]
+          },
+          {
+            "member": "analytics_retained_state.total",
+            "operator": "gt",
+            "values": [
+              "0"
+            ]
+          },
+          {
+            "member": "analytics_retained_state.total",
+            "operator": "lte",
+            "values": [
+              "100"
+            ]
+          }
+        ],
+        "resultOps": {
+          "sort": [
+            {
+              "id": "analytics_retained_state.region"
+            }
+          ],
+          "page": {
+            "limit": 1
+          }
+        }
+      },
+      "groupKeys": [],
+      "expectedDetail": [
+        [
+          "A",
+          10,
+          2
+        ]
+      ],
+      "expectedTotal": [
+        [
+          19,
+          2
+        ]
+      ],
+      "expectedBaseGroups": 2,
+      "large": false,
+      "oraclePredicate": "id < 0 AND region IN ('A','B')",
+      "minimum": 0,
+      "maximum": 100,
+      "detail": "WITH base AS (\nSELECT\n  analytics_retained_state.region AS \"analytics_retained_state.region\", MEASURE(analytics_retained_state.average) AS \"analytics_retained_state.average\", MEASURE(analytics_retained_state.people) AS \"analytics_retained_state.people\"\n  FROM analytics_retained_state\n  WHERE analytics_retained_state.id < '0' AND analytics_retained_state.region IN ('A', 'B')\n  GROUP BY 1\n  HAVING MEASURE(analytics_retained_state.total) > '0' AND MEASURE(analytics_retained_state.total) <= '100'\n)\nSELECT\n  base.\"analytics_retained_state.region\" AS \"analytics_retained_state.region\", base.\"analytics_retained_state.average\" AS \"analytics_retained_state.average\", base.\"analytics_retained_state.people\" AS \"analytics_retained_state.people\"\n  FROM base\n  ORDER BY \"analytics_retained_state.region\"\n  LIMIT 1",
+      "total": "WITH retained AS (\nSELECT\n  analytics_retained_state.region AS \"analytics_retained_state.region\", MEASURE(analytics_retained_state.average) AS \"analytics_retained_state.average\", MEASURE(analytics_retained_state.people) AS \"analytics_retained_state.people\", MEASURE(analytics_retained_state.total) AS \"__total_state_sum\", MEASURE(analytics_retained_state.samples) AS \"__total_state_count\"\n  FROM analytics_retained_state\n  WHERE analytics_retained_state.id < '0' AND analytics_retained_state.region IN ('A', 'B')\n  GROUP BY 1\n  HAVING MEASURE(analytics_retained_state.total) > '0' AND MEASURE(analytics_retained_state.total) <= '100'\n),\ncombined AS (\nSELECT ((CAST(SUM(retained.\"__total_state_sum\") AS DOUBLE PRECISION)) / NULLIF(SUM(retained.\"__total_state_count\"), 0)) AS \"analytics_retained_state.average\" FROM retained\n),\njoin_keys AS (\nSELECT\n  retained.\"analytics_retained_state.region\" AS \"analytics_retained_state.region\", retained.\"analytics_retained_state.average\" AS \"analytics_retained_state.average\", retained.\"analytics_retained_state.people\" AS \"analytics_retained_state.people\", retained.\"__total_state_sum\" AS \"__total_state_sum\", retained.\"__total_state_count\" AS \"__total_state_count\", COALESCE(CAST(retained.\"analytics_retained_state.region\" AS VARCHAR), '') AS \"__join_value_0\", (retained.\"analytics_retained_state.region\" IS NULL) AS \"__join_null_0\"\n  FROM retained\n),\ndomain AS (\nSELECT\n  analytics_retained_state.region AS \"analytics_retained_state.region\", analytics_retained_state.person AS \"analytics_retained_state.person\"\n  FROM analytics_retained_state\n  WHERE analytics_retained_state.id < '0' AND analytics_retained_state.region IN ('A', 'B')\n  GROUP BY 1, 2\n),\njoin_keys_2 AS (\nSELECT\n  domain.\"analytics_retained_state.region\" AS \"analytics_retained_state.region\", domain.\"analytics_retained_state.person\" AS \"analytics_retained_state.person\", COALESCE(CAST(domain.\"analytics_retained_state.region\" AS VARCHAR), '') AS \"__join_value_0\", (domain.\"analytics_retained_state.region\" IS NULL) AS \"__join_null_0\"\n  FROM domain\n),\ndistinct_0 AS (\nSELECT COUNT(DISTINCT domain.\"analytics_retained_state.person\") AS \"analytics_retained_state.people\" FROM join_keys_2 AS domain INNER JOIN join_keys AS selected ON domain.\"__join_value_0\" = selected.\"__join_value_0\" AND domain.\"__join_null_0\" = selected.\"__join_null_0\"\n)\nSELECT combined.\"analytics_retained_state.average\" AS \"analytics_retained_state.average\", distinct_0.\"analytics_retained_state.people\" AS \"analytics_retained_state.people\" FROM combined CROSS JOIN distinct_0",
+      "bindings": [
+        {
+          "kind": "average",
+          "member": "analytics_retained_state.average",
+          "sumMember": "analytics_retained_state.total",
+          "countMember": "analytics_retained_state.samples",
+          "sourceMembers": [
+            "analytics_retained_state.average",
+            "analytics_retained_state.id",
+            "analytics_retained_state.people",
+            "analytics_retained_state.person",
+            "analytics_retained_state.region",
+            "analytics_retained_state.samples",
+            "analytics_retained_state.total"
+          ]
+        },
+        {
+          "kind": "distinctDomain",
+          "member": "analytics_retained_state.people",
+          "dimension": "analytics_retained_state.person",
+          "sourceMembers": [
+            "analytics_retained_state.average",
+            "analytics_retained_state.id",
+            "analytics_retained_state.people",
+            "analytics_retained_state.person",
+            "analytics_retained_state.region",
+            "analytics_retained_state.samples",
+            "analytics_retained_state.total"
+          ]
+        }
+      ],
+      "oracleSql": "WITH source AS (SELECT * FROM cssql_oracle.analytics_retained_state WHERE channel='keep' AND id < 0 AND region IN ('A','B')),\n    keys AS (SELECT region FROM source GROUP BY region HAVING SUM(amount) > 0 AND SUM(amount) <= 100)\n    SELECT  AVG(source.amount) AS average, COUNT(DISTINCT source.person) AS people\n    FROM source INNER JOIN keys ON source.region IS NOT DISTINCT FROM keys.region\n    "
+    },
+    {
+      "id": "EMPTY-RETAINED",
+      "input": {
+        "dimensions": [
+          "analytics_retained_state.region"
+        ],
+        "measures": [
+          "analytics_retained_state.average",
+          "analytics_retained_state.people"
+        ],
+        "filters": [
+          {
+            "member": "analytics_retained_state.id",
+            "operator": "gte",
+            "values": [
+              "-12"
+            ]
+          },
+          {
+            "member": "analytics_retained_state.id",
+            "operator": "lt",
+            "values": [
+              "0"
+            ]
+          },
+          {
+            "member": "analytics_retained_state.total",
+            "operator": "gt",
+            "values": [
+              "1000"
+            ]
+          }
+        ],
+        "resultOps": {
+          "sort": [
+            {
+              "id": "analytics_retained_state.region"
+            }
+          ],
+          "page": {
+            "limit": 1
+          }
+        }
+      },
+      "groupKeys": [],
+      "expectedDetail": [],
+      "expectedTotal": [
+        [
+          null,
+          0
+        ]
+      ],
+      "expectedBaseGroups": 0,
+      "large": false,
+      "oraclePredicate": "id BETWEEN -12 AND -1",
+      "minimum": 1000,
+      "detail": "WITH base AS (\nSELECT\n  analytics_retained_state.region AS \"analytics_retained_state.region\", MEASURE(analytics_retained_state.average) AS \"analytics_retained_state.average\", MEASURE(analytics_retained_state.people) AS \"analytics_retained_state.people\"\n  FROM analytics_retained_state\n  WHERE analytics_retained_state.id >= '-12' AND analytics_retained_state.id < '0'\n  GROUP BY 1\n  HAVING MEASURE(analytics_retained_state.total) > '1000'\n)\nSELECT\n  base.\"analytics_retained_state.region\" AS \"analytics_retained_state.region\", base.\"analytics_retained_state.average\" AS \"analytics_retained_state.average\", base.\"analytics_retained_state.people\" AS \"analytics_retained_state.people\"\n  FROM base\n  ORDER BY \"analytics_retained_state.region\"\n  LIMIT 1",
+      "total": "WITH retained AS (\nSELECT\n  analytics_retained_state.region AS \"analytics_retained_state.region\", MEASURE(analytics_retained_state.average) AS \"analytics_retained_state.average\", MEASURE(analytics_retained_state.people) AS \"analytics_retained_state.people\", MEASURE(analytics_retained_state.total) AS \"__total_state_sum\", MEASURE(analytics_retained_state.samples) AS \"__total_state_count\"\n  FROM analytics_retained_state\n  WHERE analytics_retained_state.id >= '-12' AND analytics_retained_state.id < '0'\n  GROUP BY 1\n  HAVING MEASURE(analytics_retained_state.total) > '1000'\n),\ncombined AS (\nSELECT ((CAST(SUM(retained.\"__total_state_sum\") AS DOUBLE PRECISION)) / NULLIF(SUM(retained.\"__total_state_count\"), 0)) AS \"analytics_retained_state.average\" FROM retained\n),\njoin_keys AS (\nSELECT\n  retained.\"analytics_retained_state.region\" AS \"analytics_retained_state.region\", retained.\"analytics_retained_state.average\" AS \"analytics_retained_state.average\", retained.\"analytics_retained_state.people\" AS \"analytics_retained_state.people\", retained.\"__total_state_sum\" AS \"__total_state_sum\", retained.\"__total_state_count\" AS \"__total_state_count\", COALESCE(CAST(retained.\"analytics_retained_state.region\" AS VARCHAR), '') AS \"__join_value_0\", (retained.\"analytics_retained_state.region\" IS NULL) AS \"__join_null_0\"\n  FROM retained\n),\ndomain AS (\nSELECT\n  analytics_retained_state.region AS \"analytics_retained_state.region\", analytics_retained_state.person AS \"analytics_retained_state.person\"\n  FROM analytics_retained_state\n  WHERE analytics_retained_state.id >= '-12' AND analytics_retained_state.id < '0'\n  GROUP BY 1, 2\n),\njoin_keys_2 AS (\nSELECT\n  domain.\"analytics_retained_state.region\" AS \"analytics_retained_state.region\", domain.\"analytics_retained_state.person\" AS \"analytics_retained_state.person\", COALESCE(CAST(domain.\"analytics_retained_state.region\" AS VARCHAR), '') AS \"__join_value_0\", (domain.\"analytics_retained_state.region\" IS NULL) AS \"__join_null_0\"\n  FROM domain\n),\ndistinct_0 AS (\nSELECT COUNT(DISTINCT domain.\"analytics_retained_state.person\") AS \"analytics_retained_state.people\" FROM join_keys_2 AS domain INNER JOIN join_keys AS selected ON domain.\"__join_value_0\" = selected.\"__join_value_0\" AND domain.\"__join_null_0\" = selected.\"__join_null_0\"\n)\nSELECT combined.\"analytics_retained_state.average\" AS \"analytics_retained_state.average\", distinct_0.\"analytics_retained_state.people\" AS \"analytics_retained_state.people\" FROM combined CROSS JOIN distinct_0",
+      "bindings": [
+        {
+          "kind": "average",
+          "member": "analytics_retained_state.average",
+          "sumMember": "analytics_retained_state.total",
+          "countMember": "analytics_retained_state.samples",
+          "sourceMembers": [
+            "analytics_retained_state.average",
+            "analytics_retained_state.id",
+            "analytics_retained_state.people",
+            "analytics_retained_state.person",
+            "analytics_retained_state.region",
+            "analytics_retained_state.samples",
+            "analytics_retained_state.total"
+          ]
+        },
+        {
+          "kind": "distinctDomain",
+          "member": "analytics_retained_state.people",
+          "dimension": "analytics_retained_state.person",
+          "sourceMembers": [
+            "analytics_retained_state.average",
+            "analytics_retained_state.id",
+            "analytics_retained_state.people",
+            "analytics_retained_state.person",
+            "analytics_retained_state.region",
+            "analytics_retained_state.samples",
+            "analytics_retained_state.total"
+          ]
+        }
+      ],
+      "oracleSql": "WITH source AS (SELECT * FROM cssql_oracle.analytics_retained_state WHERE channel='keep' AND id BETWEEN -12 AND -1),\n    keys AS (SELECT region FROM source GROUP BY region HAVING SUM(amount) > 1000)\n    SELECT  AVG(source.amount) AS average, COUNT(DISTINCT source.person) AS people\n    FROM source INNER JOIN keys ON source.region IS NOT DISTINCT FROM keys.region\n    "
+    },
+    {
+      "id": "ALL-NULL",
+      "input": {
+        "dimensions": [
+          "analytics_retained_state.region"
+        ],
+        "measures": [
+          "analytics_retained_state.average",
+          "analytics_retained_state.people"
+        ],
+        "filters": [
+          {
+            "member": "analytics_retained_state.id",
+            "operator": "equals",
+            "values": [
+              "-13"
+            ]
+          }
+        ],
+        "resultOps": {
+          "sort": [
+            {
+              "id": "analytics_retained_state.region"
+            }
+          ],
+          "page": {
+            "limit": 1
+          }
+        }
+      },
+      "groupKeys": [],
+      "expectedDetail": [
+        [
+          "Z",
+          null,
+          0
+        ]
+      ],
+      "expectedTotal": [
+        [
+          null,
+          0
+        ]
+      ],
+      "expectedBaseGroups": 1,
+      "large": false,
+      "oraclePredicate": "id = -13",
+      "detail": "WITH base AS (\nSELECT\n  analytics_retained_state.region AS \"analytics_retained_state.region\", MEASURE(analytics_retained_state.average) AS \"analytics_retained_state.average\", MEASURE(analytics_retained_state.people) AS \"analytics_retained_state.people\"\n  FROM analytics_retained_state\n  WHERE analytics_retained_state.id = '-13'\n  GROUP BY 1\n)\nSELECT\n  base.\"analytics_retained_state.region\" AS \"analytics_retained_state.region\", base.\"analytics_retained_state.average\" AS \"analytics_retained_state.average\", base.\"analytics_retained_state.people\" AS \"analytics_retained_state.people\"\n  FROM base\n  ORDER BY \"analytics_retained_state.region\"\n  LIMIT 1",
+      "total": "WITH retained AS (\nSELECT\n  analytics_retained_state.region AS \"analytics_retained_state.region\", MEASURE(analytics_retained_state.average) AS \"analytics_retained_state.average\", MEASURE(analytics_retained_state.people) AS \"analytics_retained_state.people\", MEASURE(analytics_retained_state.total) AS \"__total_state_sum\", MEASURE(analytics_retained_state.samples) AS \"__total_state_count\"\n  FROM analytics_retained_state\n  WHERE analytics_retained_state.id = '-13'\n  GROUP BY 1\n),\ncombined AS (\nSELECT ((CAST(SUM(retained.\"__total_state_sum\") AS DOUBLE PRECISION)) / NULLIF(SUM(retained.\"__total_state_count\"), 0)) AS \"analytics_retained_state.average\" FROM retained\n),\njoin_keys AS (\nSELECT\n  retained.\"analytics_retained_state.region\" AS \"analytics_retained_state.region\", retained.\"analytics_retained_state.average\" AS \"analytics_retained_state.average\", retained.\"analytics_retained_state.people\" AS \"analytics_retained_state.people\", retained.\"__total_state_sum\" AS \"__total_state_sum\", retained.\"__total_state_count\" AS \"__total_state_count\", COALESCE(CAST(retained.\"analytics_retained_state.region\" AS VARCHAR), '') AS \"__join_value_0\", (retained.\"analytics_retained_state.region\" IS NULL) AS \"__join_null_0\"\n  FROM retained\n),\ndomain AS (\nSELECT\n  analytics_retained_state.region AS \"analytics_retained_state.region\", analytics_retained_state.person AS \"analytics_retained_state.person\"\n  FROM analytics_retained_state\n  WHERE analytics_retained_state.id = '-13'\n  GROUP BY 1, 2\n),\njoin_keys_2 AS (\nSELECT\n  domain.\"analytics_retained_state.region\" AS \"analytics_retained_state.region\", domain.\"analytics_retained_state.person\" AS \"analytics_retained_state.person\", COALESCE(CAST(domain.\"analytics_retained_state.region\" AS VARCHAR), '') AS \"__join_value_0\", (domain.\"analytics_retained_state.region\" IS NULL) AS \"__join_null_0\"\n  FROM domain\n),\ndistinct_0 AS (\nSELECT COUNT(DISTINCT domain.\"analytics_retained_state.person\") AS \"analytics_retained_state.people\" FROM join_keys_2 AS domain INNER JOIN join_keys AS selected ON domain.\"__join_value_0\" = selected.\"__join_value_0\" AND domain.\"__join_null_0\" = selected.\"__join_null_0\"\n)\nSELECT combined.\"analytics_retained_state.average\" AS \"analytics_retained_state.average\", distinct_0.\"analytics_retained_state.people\" AS \"analytics_retained_state.people\" FROM combined CROSS JOIN distinct_0",
+      "bindings": [
+        {
+          "kind": "average",
+          "member": "analytics_retained_state.average",
+          "sumMember": "analytics_retained_state.total",
+          "countMember": "analytics_retained_state.samples",
+          "sourceMembers": [
+            "analytics_retained_state.average",
+            "analytics_retained_state.id",
+            "analytics_retained_state.people",
+            "analytics_retained_state.person",
+            "analytics_retained_state.region",
+            "analytics_retained_state.samples",
+            "analytics_retained_state.total"
+          ]
+        },
+        {
+          "kind": "distinctDomain",
+          "member": "analytics_retained_state.people",
+          "dimension": "analytics_retained_state.person",
+          "sourceMembers": [
+            "analytics_retained_state.average",
+            "analytics_retained_state.id",
+            "analytics_retained_state.people",
+            "analytics_retained_state.person",
+            "analytics_retained_state.region",
+            "analytics_retained_state.samples",
+            "analytics_retained_state.total"
+          ]
+        }
+      ],
+      "oracleSql": "WITH source AS (SELECT * FROM cssql_oracle.analytics_retained_state WHERE channel='keep' AND id = -13),\n    keys AS (SELECT region FROM source GROUP BY region )\n    SELECT  AVG(source.amount) AS average, COUNT(DISTINCT source.person) AS people\n    FROM source INNER JOIN keys ON source.region IS NOT DISTINCT FROM keys.region\n    "
+    },
+    {
+      "id": "NULL-KEY",
+      "input": {
+        "dimensions": [
+          "analytics_retained_state.region"
+        ],
+        "measures": [
+          "analytics_retained_state.average",
+          "analytics_retained_state.people"
+        ],
+        "filters": [
+          {
+            "member": "analytics_retained_state.id",
+            "operator": "equals",
+            "values": [
+              "-14"
+            ]
+          }
+        ],
+        "resultOps": {
+          "sort": [
+            {
+              "id": "analytics_retained_state.region"
+            }
+          ],
+          "page": {
+            "limit": 1
+          }
+        }
+      },
+      "groupKeys": [],
+      "expectedDetail": [
+        [
+          null,
+          50,
+          1
+        ]
+      ],
+      "expectedTotal": [
+        [
+          50,
+          1
+        ]
+      ],
+      "expectedBaseGroups": 1,
+      "large": false,
+      "oraclePredicate": "id = -14",
+      "detail": "WITH base AS (\nSELECT\n  analytics_retained_state.region AS \"analytics_retained_state.region\", MEASURE(analytics_retained_state.average) AS \"analytics_retained_state.average\", MEASURE(analytics_retained_state.people) AS \"analytics_retained_state.people\"\n  FROM analytics_retained_state\n  WHERE analytics_retained_state.id = '-14'\n  GROUP BY 1\n)\nSELECT\n  base.\"analytics_retained_state.region\" AS \"analytics_retained_state.region\", base.\"analytics_retained_state.average\" AS \"analytics_retained_state.average\", base.\"analytics_retained_state.people\" AS \"analytics_retained_state.people\"\n  FROM base\n  ORDER BY \"analytics_retained_state.region\"\n  LIMIT 1",
+      "total": "WITH retained AS (\nSELECT\n  analytics_retained_state.region AS \"analytics_retained_state.region\", MEASURE(analytics_retained_state.average) AS \"analytics_retained_state.average\", MEASURE(analytics_retained_state.people) AS \"analytics_retained_state.people\", MEASURE(analytics_retained_state.total) AS \"__total_state_sum\", MEASURE(analytics_retained_state.samples) AS \"__total_state_count\"\n  FROM analytics_retained_state\n  WHERE analytics_retained_state.id = '-14'\n  GROUP BY 1\n),\ncombined AS (\nSELECT ((CAST(SUM(retained.\"__total_state_sum\") AS DOUBLE PRECISION)) / NULLIF(SUM(retained.\"__total_state_count\"), 0)) AS \"analytics_retained_state.average\" FROM retained\n),\njoin_keys AS (\nSELECT\n  retained.\"analytics_retained_state.region\" AS \"analytics_retained_state.region\", retained.\"analytics_retained_state.average\" AS \"analytics_retained_state.average\", retained.\"analytics_retained_state.people\" AS \"analytics_retained_state.people\", retained.\"__total_state_sum\" AS \"__total_state_sum\", retained.\"__total_state_count\" AS \"__total_state_count\", COALESCE(CAST(retained.\"analytics_retained_state.region\" AS VARCHAR), '') AS \"__join_value_0\", (retained.\"analytics_retained_state.region\" IS NULL) AS \"__join_null_0\"\n  FROM retained\n),\ndomain AS (\nSELECT\n  analytics_retained_state.region AS \"analytics_retained_state.region\", analytics_retained_state.person AS \"analytics_retained_state.person\"\n  FROM analytics_retained_state\n  WHERE analytics_retained_state.id = '-14'\n  GROUP BY 1, 2\n),\njoin_keys_2 AS (\nSELECT\n  domain.\"analytics_retained_state.region\" AS \"analytics_retained_state.region\", domain.\"analytics_retained_state.person\" AS \"analytics_retained_state.person\", COALESCE(CAST(domain.\"analytics_retained_state.region\" AS VARCHAR), '') AS \"__join_value_0\", (domain.\"analytics_retained_state.region\" IS NULL) AS \"__join_null_0\"\n  FROM domain\n),\ndistinct_0 AS (\nSELECT COUNT(DISTINCT domain.\"analytics_retained_state.person\") AS \"analytics_retained_state.people\" FROM join_keys_2 AS domain INNER JOIN join_keys AS selected ON domain.\"__join_value_0\" = selected.\"__join_value_0\" AND domain.\"__join_null_0\" = selected.\"__join_null_0\"\n)\nSELECT combined.\"analytics_retained_state.average\" AS \"analytics_retained_state.average\", distinct_0.\"analytics_retained_state.people\" AS \"analytics_retained_state.people\" FROM combined CROSS JOIN distinct_0",
+      "bindings": [
+        {
+          "kind": "average",
+          "member": "analytics_retained_state.average",
+          "sumMember": "analytics_retained_state.total",
+          "countMember": "analytics_retained_state.samples",
+          "sourceMembers": [
+            "analytics_retained_state.average",
+            "analytics_retained_state.id",
+            "analytics_retained_state.people",
+            "analytics_retained_state.person",
+            "analytics_retained_state.region",
+            "analytics_retained_state.samples",
+            "analytics_retained_state.total"
+          ]
+        },
+        {
+          "kind": "distinctDomain",
+          "member": "analytics_retained_state.people",
+          "dimension": "analytics_retained_state.person",
+          "sourceMembers": [
+            "analytics_retained_state.average",
+            "analytics_retained_state.id",
+            "analytics_retained_state.people",
+            "analytics_retained_state.person",
+            "analytics_retained_state.region",
+            "analytics_retained_state.samples",
+            "analytics_retained_state.total"
+          ]
+        }
+      ],
+      "oracleSql": "WITH source AS (SELECT * FROM cssql_oracle.analytics_retained_state WHERE channel='keep' AND id = -14),\n    keys AS (SELECT region FROM source GROUP BY region )\n    SELECT  AVG(source.amount) AS average, COUNT(DISTINCT source.person) AS people\n    FROM source INNER JOIN keys ON source.region IS NOT DISTINCT FROM keys.region\n    "
+    },
+    {
+      "id": "COMPLETE-GLOBAL",
+      "input": {
+        "dimensions": [
+          "analytics_retained_state.region"
+        ],
+        "measures": [
+          "analytics_retained_state.average",
+          "analytics_retained_state.people"
+        ],
+        "filters": [
+          {
+            "member": "analytics_retained_state.id",
+            "operator": "gt",
+            "values": [
+              "0"
+            ]
+          },
+          {
+            "member": "analytics_retained_state.total",
+            "operator": "gt",
+            "values": [
+              "0"
+            ]
+          }
+        ],
+        "resultOps": {
+          "sort": [
+            {
+              "id": "analytics_retained_state.region"
+            }
+          ],
+          "page": {
+            "limit": 1,
+            "offset": 10000
+          }
+        }
+      },
+      "groupKeys": [],
+      "expectedDetail": [
+        [
+          "00010001",
+          1,
+          1
+        ]
+      ],
+      "expectedTotal": [
+        [
+          1,
+          60001
+        ]
+      ],
+      "expectedBaseGroups": 60001,
+      "large": true,
+      "oraclePredicate": "id > 0",
+      "minimum": 0,
+      "detail": "WITH base AS (\nSELECT\n  analytics_retained_state.region AS \"analytics_retained_state.region\", MEASURE(analytics_retained_state.average) AS \"analytics_retained_state.average\", MEASURE(analytics_retained_state.people) AS \"analytics_retained_state.people\"\n  FROM analytics_retained_state\n  WHERE analytics_retained_state.id > '0'\n  GROUP BY 1\n  HAVING MEASURE(analytics_retained_state.total) > '0'\n)\nSELECT\n  base.\"analytics_retained_state.region\" AS \"analytics_retained_state.region\", base.\"analytics_retained_state.average\" AS \"analytics_retained_state.average\", base.\"analytics_retained_state.people\" AS \"analytics_retained_state.people\"\n  FROM base\n  ORDER BY \"analytics_retained_state.region\"\n  LIMIT 1\n  OFFSET 10000",
+      "total": "WITH retained AS (\nSELECT\n  analytics_retained_state.region AS \"analytics_retained_state.region\", MEASURE(analytics_retained_state.average) AS \"analytics_retained_state.average\", MEASURE(analytics_retained_state.people) AS \"analytics_retained_state.people\", MEASURE(analytics_retained_state.total) AS \"__total_state_sum\", MEASURE(analytics_retained_state.samples) AS \"__total_state_count\"\n  FROM analytics_retained_state\n  WHERE analytics_retained_state.id > '0'\n  GROUP BY 1\n  HAVING MEASURE(analytics_retained_state.total) > '0'\n),\ncombined AS (\nSELECT ((CAST(SUM(retained.\"__total_state_sum\") AS DOUBLE PRECISION)) / NULLIF(SUM(retained.\"__total_state_count\"), 0)) AS \"analytics_retained_state.average\" FROM retained\n),\njoin_keys AS (\nSELECT\n  retained.\"analytics_retained_state.region\" AS \"analytics_retained_state.region\", retained.\"analytics_retained_state.average\" AS \"analytics_retained_state.average\", retained.\"analytics_retained_state.people\" AS \"analytics_retained_state.people\", retained.\"__total_state_sum\" AS \"__total_state_sum\", retained.\"__total_state_count\" AS \"__total_state_count\", COALESCE(CAST(retained.\"analytics_retained_state.region\" AS VARCHAR), '') AS \"__join_value_0\", (retained.\"analytics_retained_state.region\" IS NULL) AS \"__join_null_0\"\n  FROM retained\n),\ndomain AS (\nSELECT\n  analytics_retained_state.region AS \"analytics_retained_state.region\", analytics_retained_state.person AS \"analytics_retained_state.person\"\n  FROM analytics_retained_state\n  WHERE analytics_retained_state.id > '0'\n  GROUP BY 1, 2\n),\njoin_keys_2 AS (\nSELECT\n  domain.\"analytics_retained_state.region\" AS \"analytics_retained_state.region\", domain.\"analytics_retained_state.person\" AS \"analytics_retained_state.person\", COALESCE(CAST(domain.\"analytics_retained_state.region\" AS VARCHAR), '') AS \"__join_value_0\", (domain.\"analytics_retained_state.region\" IS NULL) AS \"__join_null_0\"\n  FROM domain\n),\ndistinct_0 AS (\nSELECT COUNT(DISTINCT domain.\"analytics_retained_state.person\") AS \"analytics_retained_state.people\" FROM join_keys_2 AS domain INNER JOIN join_keys AS selected ON domain.\"__join_value_0\" = selected.\"__join_value_0\" AND domain.\"__join_null_0\" = selected.\"__join_null_0\"\n)\nSELECT combined.\"analytics_retained_state.average\" AS \"analytics_retained_state.average\", distinct_0.\"analytics_retained_state.people\" AS \"analytics_retained_state.people\" FROM combined CROSS JOIN distinct_0",
+      "bindings": [
+        {
+          "kind": "average",
+          "member": "analytics_retained_state.average",
+          "sumMember": "analytics_retained_state.total",
+          "countMember": "analytics_retained_state.samples",
+          "sourceMembers": [
+            "analytics_retained_state.average",
+            "analytics_retained_state.id",
+            "analytics_retained_state.people",
+            "analytics_retained_state.person",
+            "analytics_retained_state.region",
+            "analytics_retained_state.samples",
+            "analytics_retained_state.total"
+          ]
+        },
+        {
+          "kind": "distinctDomain",
+          "member": "analytics_retained_state.people",
+          "dimension": "analytics_retained_state.person",
+          "sourceMembers": [
+            "analytics_retained_state.average",
+            "analytics_retained_state.id",
+            "analytics_retained_state.people",
+            "analytics_retained_state.person",
+            "analytics_retained_state.region",
+            "analytics_retained_state.samples",
+            "analytics_retained_state.total"
+          ]
+        }
+      ],
+      "oracleSql": "WITH source AS (SELECT * FROM cssql_oracle.analytics_retained_state WHERE channel='keep' AND id > 0),\n    keys AS (SELECT region FROM source GROUP BY region HAVING SUM(amount) > 0)\n    SELECT  AVG(source.amount) AS average, COUNT(DISTINCT source.person) AS people\n    FROM source INNER JOIN keys ON source.region IS NOT DISTINCT FROM keys.region\n    "
+    }
+  ]
+}

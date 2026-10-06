@@ -27,7 +27,11 @@ describe('PostgresDriver', () => {
   });
 
   afterAll(async () => {
-    await container.stop();
+    try {
+      await driver.release();
+    } finally {
+      await container.stop();
+    }
   });
 
   test('type coercion', async () => {

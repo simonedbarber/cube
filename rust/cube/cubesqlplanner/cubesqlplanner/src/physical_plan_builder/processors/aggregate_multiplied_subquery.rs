@@ -1,4 +1,5 @@
 use super::super::{LogicalNodeProcessor, ProcessableNode, PushDownBuilderContext};
+use super::keys_sub_query::KeysSubQueryProcessor;
 use crate::logical_plan::transforms as logical_transforms;
 use crate::logical_plan::{AggregateMultipliedSubquery, AggregateMultipliedSubquerySource};
 use crate::physical_plan::ReferencesBuilder;
@@ -38,6 +39,57 @@ fn check_measures_survive_measure_subquery(measures: &[Rc<MemberSymbol>]) -> Res
     Ok(())
 }
 
+/// A root-owned scalar sum is functionally determined by its declared identity.
+/// Project it before DISTINCT, then aggregate the surviving identity/group rows.
+/// This removes only the second value lookup; it never prunes the joined population.
+/// Keep contextual, masked, filtered and cross-cube expressions on the lookup path.
+fn can_inline_root_sums(
+    aggregate: &AggregateMultipliedSubquery,
+    context: &PushDownBuilderContext,
+) -> bool {
+    let AggregateMultipliedSubquerySource::Cube(cube) = &aggregate.source else {
+        return false;
+    };
+    let Some(root) = aggregate.keys_subquery.source().root() else {
+        return false;
+    };
+    if root.cube().name() != cube.cube().name()
+        || aggregate.evaluation_context.is_some()
+        || context.dimensions_query
+        || context.render_measure_for_ungrouped
+        || !aggregate.dimension_subqueries.is_empty()
+        || !aggregate
+            .keys_subquery
+            .source()
+            .dimension_subqueries()
+            .is_empty()
+        || aggregate.keys_subquery.primary_keys_dimensions().is_empty()
+        || aggregate.schema.measures.is_empty()
+        || aggregate
+            .keys_subquery
+            .primary_keys_dimensions()
+            .iter()
+            .any(|key| key.mask_sql().is_some())
+    {
+        return false;
+    }
+    aggregate.schema.measures.iter().all(|member| {
+        let Ok(measure) = member.as_measure() else {
+            return false;
+        };
+        measure.cube_name() == *root.cube().name()
+            && measure.measure_type() == "sum"
+            && measure.kind().is_owned_by_cube()
+            && !measure.is_multi_stage()
+            && !measure.is_cumulative()
+            && measure.render_modifier().is_none()
+            && measure.mask_sql().is_none()
+            && measure.case().is_none()
+            && measure.measure_filters().is_empty()
+            && measure.measure_order_by().is_empty()
+    })
+}
+
 pub struct AggregateMultipliedSubqueryProcessor<'a> {
     builder: &'a PhysicalPlanBuilder,
 }
@@ -69,10 +121,20 @@ impl<'a> LogicalNodeProcessor<'a, AggregateMultipliedSubquery>
         }
 
         let query_tools = self.builder.query_tools();
-        let keys_query = self.builder.process_node(
-            aggregate_multiplied_subquery.keys_subquery.as_ref(),
-            context,
-        )?;
+        let inline_root_sums = can_inline_root_sums(aggregate_multiplied_subquery, context)
+            && !query_tools.has_masked_members();
+        let keys_query = if inline_root_sums {
+            KeysSubQueryProcessor::new(self.builder).process_with_identity_measures(
+                aggregate_multiplied_subquery.keys_subquery.as_ref(),
+                context,
+                &aggregate_multiplied_subquery.schema.measures,
+            )?
+        } else {
+            self.builder.process_node(
+                aggregate_multiplied_subquery.keys_subquery.as_ref(),
+                context,
+            )?
+        };
 
         if context.dimensions_query {
             return Ok(keys_query);
@@ -106,43 +168,56 @@ impl<'a> LogicalNodeProcessor<'a, AggregateMultipliedSubquery>
                 // Clone the parent factory rather than rebuilding from context so
                 // that any state already added above (currently none, but this
                 // makes the lineage explicit for future maintenance) is preserved.
-                let mut join_context_factory = context_factory.clone();
-                join_context_factory
-                    .add_cube_name_reference(cube.cube().name().clone(), pk_cube_alias.clone());
-                let join_visitor_context = Rc::new(VisitorContext::new(
-                    query_tools.clone(),
-                    &join_context_factory,
-                    None,
-                ));
-
-                let conditions = primary_keys_dimensions
-                    .iter()
-                    .map(|dim| -> Result<_, CubeError> {
-                        let alias_in_keys_query = keys_query.schema().resolve_member_alias(dim);
-                        let keys_query_ref = Expr::Reference(QualifiedColumnName::new(
-                            Some(keys_query_alias.clone()),
-                            alias_in_keys_query,
-                        ));
-                        let pk_cube_expr = Expr::new_member_with_context(
-                            dim.clone(),
-                            join_visitor_context.clone(),
+                if inline_root_sums {
+                    for measure in &aggregate_multiplied_subquery.schema.measures {
+                        context_factory.add_ungrouped_measure_reference(
+                            measure.full_name(),
+                            QualifiedColumnName::new(
+                                Some(keys_query_alias.clone()),
+                                keys_query.schema().resolve_member_alias(measure),
+                            ),
                         );
-                        Ok(vec![(keys_query_ref, pk_cube_expr)])
-                    })
-                    .collect::<Result<Vec<_>, _>>()?;
+                    }
+                } else {
+                    let mut join_context_factory = context_factory.clone();
+                    join_context_factory
+                        .add_cube_name_reference(cube.cube().name().clone(), pk_cube_alias.clone());
+                    let join_visitor_context = Rc::new(VisitorContext::new(
+                        query_tools.clone(),
+                        &join_context_factory,
+                        None,
+                    ));
 
-                join_builder.left_join_cube(
-                    cube.cube().clone(),
-                    Some(pk_cube_alias.clone()),
-                    JoinCondition::new_dimension_join(conditions, false),
-                );
-                for dimension_subquery in aggregate_multiplied_subquery.dimension_subqueries.iter()
-                {
-                    self.builder.add_subquery_join(
-                        dimension_subquery.clone(),
-                        &mut join_builder,
-                        context,
-                    )?;
+                    let conditions = primary_keys_dimensions
+                        .iter()
+                        .map(|dim| -> Result<_, CubeError> {
+                            let alias_in_keys_query = keys_query.schema().resolve_member_alias(dim);
+                            let keys_query_ref = Expr::Reference(QualifiedColumnName::new(
+                                Some(keys_query_alias.clone()),
+                                alias_in_keys_query,
+                            ));
+                            let pk_cube_expr = Expr::new_member_with_context(
+                                dim.clone(),
+                                join_visitor_context.clone(),
+                            );
+                            Ok(vec![(keys_query_ref, pk_cube_expr)])
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+
+                    join_builder.left_join_cube(
+                        cube.cube().clone(),
+                        Some(pk_cube_alias.clone()),
+                        JoinCondition::new_dimension_join(conditions, false),
+                    );
+                    for dimension_subquery in
+                        aggregate_multiplied_subquery.dimension_subqueries.iter()
+                    {
+                        self.builder.add_subquery_join(
+                            dimension_subquery.clone(),
+                            &mut join_builder,
+                            context,
+                        )?;
+                    }
                 }
             }
             AggregateMultipliedSubquerySource::MeasureSubquery(measure_subquery) => {
@@ -218,10 +293,12 @@ impl<'a> LogicalNodeProcessor<'a, AggregateMultipliedSubquery>
         }
         for (measure, exists) in self.builder.measures_for_query(&schema.measures, &context) {
             if exists {
-                if matches!(
-                    &aggregate_multiplied_subquery.source,
-                    AggregateMultipliedSubquerySource::Cube(_)
-                ) {
+                if !inline_root_sums
+                    && matches!(
+                        &aggregate_multiplied_subquery.source,
+                        AggregateMultipliedSubquerySource::Cube(_)
+                    )
+                {
                     references_builder.resolve_references_for_member(
                         measure.clone(),
                         &None,

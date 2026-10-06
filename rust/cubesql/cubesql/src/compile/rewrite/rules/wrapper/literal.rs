@@ -103,6 +103,17 @@ impl WrapperRules {
                         );
                     }
 
+                    ScalarValue::Float32(value) => {
+                        return value.map_or(true, |v| v.is_finite())
+                            && Self::can_rewrite_template(&data_source, &meta, "expressions/cast")
+                            && Self::can_rewrite_template(&data_source, &meta, "types/float");
+                    }
+                    ScalarValue::Float64(value) => {
+                        return value.map_or(true, |v| v.is_finite())
+                            && Self::can_rewrite_template(&data_source, &meta, "expressions/cast")
+                            && Self::can_rewrite_template(&data_source, &meta, "types/double");
+                    }
+
                     // transform_inteval_literal
                     ScalarValue::IntervalYearMonth(_) => return false,
                     ScalarValue::IntervalDayTime(_) => return false,

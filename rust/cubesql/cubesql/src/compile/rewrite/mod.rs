@@ -356,6 +356,7 @@ crate::plan_to_language! {
         Order {
             member: String,
             asc: bool,
+            nulls_first: bool,
         },
         FilterMember {
             member: String,
@@ -2467,8 +2468,8 @@ fn cube_scan_order_empty_tail() -> String {
     format!("CubeScanOrder")
 }
 
-fn order(member: impl Display, asc: impl Display) -> String {
-    format!("(Order {} {})", member, asc)
+fn order(member: impl Display, asc: impl Display, nulls_first: impl Display) -> String {
+    format!("(Order {} {} {})", member, asc, nulls_first)
 }
 
 fn filter_op(filters: impl Display, op: impl Display) -> String {

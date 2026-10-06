@@ -1,0 +1,527 @@
+{
+  "description": "Existing QueryRails retained development owner, emission revision 3. Captured K is a regression input, not a platform default or an admission lift.",
+  "configuredK": 50000,
+  "population": 60001,
+  "emissionRevision": 3,
+  "modelSource": "cube('analytics_retained_totals', {\n    sql: \"SELECT * FROM analytics_retained_totals WHERE channel = 'keep'\",\n    dimensions: { id: { sql: 'id', type: 'number', primary_key: true, public: true },\n      region: { sql: 'region', type: 'string' } },\n    measures: {\n      total: { sql: 'amount', type: 'sum', meta: {\"summarizability\":\"distributive\",\"staged\":false,\"rolling\":false,\"time_shifted\":false} },\n      count: { type: 'count', meta: {\"summarizability\":\"distributive\",\"staged\":false,\"rolling\":false,\"time_shifted\":false} },\n      minimum: { sql: 'amount', type: 'min', meta: {\"summarizability\":\"distributive\",\"staged\":false,\"rolling\":false,\"time_shifted\":false} },\n      maximum: { sql: 'amount', type: 'max', meta: {\"summarizability\":\"distributive\",\"staged\":false,\"rolling\":false,\"time_shifted\":false} }\n    }\n  });",
+  "setupSQL": "CREATE TABLE analytics_retained_totals(id integer PRIMARY KEY, region text, channel text, amount double precision);\n    INSERT INTO analytics_retained_totals VALUES (-1,'A','keep',25),(-2,'A','keep',25),\n      (-3,'B','keep',50),(-4,'B','keep',50),(-5,'B','keep',50),(-6,'Z','keep',NULL),(-7,'clipped','exclude',999);\n    INSERT INTO analytics_retained_totals SELECT id, LPAD(id::text,8,'0'), 'keep', id FROM generate_series(1,60001) AS input(id);",
+  "cases": [
+    {
+      "id": "PAGE-A",
+      "input": {
+        "dimensions": [
+          "analytics_retained_totals.region"
+        ],
+        "measures": [
+          "analytics_retained_totals.total",
+          "analytics_retained_totals.count",
+          "analytics_retained_totals.minimum",
+          "analytics_retained_totals.maximum"
+        ],
+        "filters": [
+          {
+            "member": "analytics_retained_totals.id",
+            "operator": "lt",
+            "values": [
+              "0"
+            ]
+          },
+          {
+            "member": "analytics_retained_totals.total",
+            "operator": "gt",
+            "values": [
+              "0"
+            ]
+          }
+        ],
+        "resultOps": {
+          "sort": [
+            {
+              "id": "analytics_retained_totals.region"
+            }
+          ],
+          "page": {
+            "limit": 1
+          }
+        }
+      },
+      "groupKeys": [],
+      "expectedDetail": [
+        [
+          "A",
+          50,
+          2,
+          25,
+          25
+        ]
+      ],
+      "expectedTotal": [
+        [
+          200,
+          5,
+          25,
+          50
+        ]
+      ],
+      "large": false,
+      "minimum": 0,
+      "expectedBaseGroups": 2,
+      "detail": "WITH base AS (\nSELECT\n  analytics_retained_totals.region AS \"analytics_retained_totals.region\", MEASURE(analytics_retained_totals.total) AS \"analytics_retained_totals.total\", MEASURE(analytics_retained_totals.count) AS \"analytics_retained_totals.count\", MEASURE(analytics_retained_totals.minimum) AS \"analytics_retained_totals.minimum\", MEASURE(analytics_retained_totals.maximum) AS \"analytics_retained_totals.maximum\"\n  FROM analytics_retained_totals\n  WHERE analytics_retained_totals.id < '0'\n  GROUP BY 1\n  HAVING MEASURE(analytics_retained_totals.total) > '0'\n)\nSELECT\n  base.\"analytics_retained_totals.region\" AS \"analytics_retained_totals.region\", base.\"analytics_retained_totals.total\" AS \"analytics_retained_totals.total\", base.\"analytics_retained_totals.count\" AS \"analytics_retained_totals.count\", base.\"analytics_retained_totals.minimum\" AS \"analytics_retained_totals.minimum\", base.\"analytics_retained_totals.maximum\" AS \"analytics_retained_totals.maximum\"\n  FROM base\n  ORDER BY \"analytics_retained_totals.region\"\n  LIMIT 1",
+      "total": "SELECT SUM(retained.\"analytics_retained_totals.total\") AS \"analytics_retained_totals.total\", COALESCE(SUM(retained.\"analytics_retained_totals.count\"), 0) AS \"analytics_retained_totals.count\", MIN(retained.\"analytics_retained_totals.minimum\") AS \"analytics_retained_totals.minimum\", MAX(retained.\"analytics_retained_totals.maximum\") AS \"analytics_retained_totals.maximum\" FROM (SELECT\n  analytics_retained_totals.region AS \"analytics_retained_totals.region\", MEASURE(analytics_retained_totals.total) AS \"analytics_retained_totals.total\", MEASURE(analytics_retained_totals.count) AS \"analytics_retained_totals.count\", MEASURE(analytics_retained_totals.minimum) AS \"analytics_retained_totals.minimum\", MEASURE(analytics_retained_totals.maximum) AS \"analytics_retained_totals.maximum\"\n  FROM analytics_retained_totals\n  WHERE analytics_retained_totals.id < '0'\n  GROUP BY 1\n  HAVING MEASURE(analytics_retained_totals.total) > '0') AS retained",
+      "oracleSql": "WITH grouped AS (SELECT region, SUM(amount) AS total, COUNT(*) AS count,\n    MIN(amount) AS minimum, MAX(amount) AS maximum FROM analytics_retained_totals\n    WHERE channel='keep' AND id < 0 GROUP BY region HAVING SUM(amount) > 0)\n    SELECT  SUM(total) AS total, COALESCE(SUM(count),0) AS count,\n      MIN(minimum) AS minimum, MAX(maximum) AS maximum FROM grouped\n      "
+    },
+    {
+      "id": "RESULT-FILTER",
+      "input": {
+        "dimensions": [
+          "analytics_retained_totals.region"
+        ],
+        "measures": [
+          "analytics_retained_totals.total",
+          "analytics_retained_totals.count",
+          "analytics_retained_totals.minimum",
+          "analytics_retained_totals.maximum"
+        ],
+        "filters": [
+          {
+            "member": "analytics_retained_totals.id",
+            "operator": "lt",
+            "values": [
+              "0"
+            ]
+          },
+          {
+            "member": "analytics_retained_totals.total",
+            "operator": "gt",
+            "values": [
+              "0"
+            ]
+          }
+        ],
+        "resultOps": {
+          "filters": [
+            {
+              "member": "analytics_retained_totals.total",
+              "operator": "gt",
+              "values": [
+                "100"
+              ]
+            }
+          ],
+          "sort": [
+            {
+              "id": "analytics_retained_totals.region"
+            }
+          ],
+          "page": {
+            "limit": 1
+          }
+        }
+      },
+      "groupKeys": [],
+      "expectedDetail": [
+        [
+          "B",
+          150,
+          3,
+          50,
+          50
+        ]
+      ],
+      "expectedTotal": [
+        [
+          200,
+          5,
+          25,
+          50
+        ]
+      ],
+      "large": false,
+      "minimum": 0,
+      "expectedBaseGroups": 2,
+      "detail": "WITH base AS (\nSELECT\n  analytics_retained_totals.region AS \"analytics_retained_totals.region\", MEASURE(analytics_retained_totals.total) AS \"analytics_retained_totals.total\", MEASURE(analytics_retained_totals.count) AS \"analytics_retained_totals.count\", MEASURE(analytics_retained_totals.minimum) AS \"analytics_retained_totals.minimum\", MEASURE(analytics_retained_totals.maximum) AS \"analytics_retained_totals.maximum\"\n  FROM analytics_retained_totals\n  WHERE analytics_retained_totals.id < '0'\n  GROUP BY 1\n  HAVING MEASURE(analytics_retained_totals.total) > '0'\n),\nfiltered AS (\nSELECT\n  base.\"analytics_retained_totals.region\" AS \"analytics_retained_totals.region\", base.\"analytics_retained_totals.total\" AS \"analytics_retained_totals.total\", base.\"analytics_retained_totals.count\" AS \"analytics_retained_totals.count\", base.\"analytics_retained_totals.minimum\" AS \"analytics_retained_totals.minimum\", base.\"analytics_retained_totals.maximum\" AS \"analytics_retained_totals.maximum\"\n  FROM base\n  WHERE base.\"analytics_retained_totals.total\" > '100'\n)\nSELECT\n  filtered.\"analytics_retained_totals.region\" AS \"analytics_retained_totals.region\", filtered.\"analytics_retained_totals.total\" AS \"analytics_retained_totals.total\", filtered.\"analytics_retained_totals.count\" AS \"analytics_retained_totals.count\", filtered.\"analytics_retained_totals.minimum\" AS \"analytics_retained_totals.minimum\", filtered.\"analytics_retained_totals.maximum\" AS \"analytics_retained_totals.maximum\"\n  FROM filtered\n  ORDER BY \"analytics_retained_totals.region\"\n  LIMIT 1",
+      "total": "SELECT SUM(retained.\"analytics_retained_totals.total\") AS \"analytics_retained_totals.total\", COALESCE(SUM(retained.\"analytics_retained_totals.count\"), 0) AS \"analytics_retained_totals.count\", MIN(retained.\"analytics_retained_totals.minimum\") AS \"analytics_retained_totals.minimum\", MAX(retained.\"analytics_retained_totals.maximum\") AS \"analytics_retained_totals.maximum\" FROM (SELECT\n  analytics_retained_totals.region AS \"analytics_retained_totals.region\", MEASURE(analytics_retained_totals.total) AS \"analytics_retained_totals.total\", MEASURE(analytics_retained_totals.count) AS \"analytics_retained_totals.count\", MEASURE(analytics_retained_totals.minimum) AS \"analytics_retained_totals.minimum\", MEASURE(analytics_retained_totals.maximum) AS \"analytics_retained_totals.maximum\"\n  FROM analytics_retained_totals\n  WHERE analytics_retained_totals.id < '0'\n  GROUP BY 1\n  HAVING MEASURE(analytics_retained_totals.total) > '0') AS retained",
+      "oracleSql": "WITH grouped AS (SELECT region, SUM(amount) AS total, COUNT(*) AS count,\n    MIN(amount) AS minimum, MAX(amount) AS maximum FROM analytics_retained_totals\n    WHERE channel='keep' AND id < 0 GROUP BY region HAVING SUM(amount) > 0)\n    SELECT  SUM(total) AS total, COALESCE(SUM(count),0) AS count,\n      MIN(minimum) AS minimum, MAX(maximum) AS maximum FROM grouped\n      "
+    },
+    {
+      "id": "EMPTY-DETAIL",
+      "input": {
+        "dimensions": [
+          "analytics_retained_totals.region"
+        ],
+        "measures": [
+          "analytics_retained_totals.total",
+          "analytics_retained_totals.count",
+          "analytics_retained_totals.minimum",
+          "analytics_retained_totals.maximum"
+        ],
+        "filters": [
+          {
+            "member": "analytics_retained_totals.id",
+            "operator": "lt",
+            "values": [
+              "0"
+            ]
+          },
+          {
+            "member": "analytics_retained_totals.total",
+            "operator": "gt",
+            "values": [
+              "0"
+            ]
+          }
+        ],
+        "resultOps": {
+          "sort": [
+            {
+              "id": "analytics_retained_totals.region"
+            }
+          ],
+          "page": {
+            "limit": 1,
+            "offset": 100
+          }
+        }
+      },
+      "groupKeys": [],
+      "expectedDetail": [],
+      "expectedTotal": [
+        [
+          200,
+          5,
+          25,
+          50
+        ]
+      ],
+      "large": false,
+      "minimum": 0,
+      "expectedBaseGroups": 2,
+      "detail": "WITH base AS (\nSELECT\n  analytics_retained_totals.region AS \"analytics_retained_totals.region\", MEASURE(analytics_retained_totals.total) AS \"analytics_retained_totals.total\", MEASURE(analytics_retained_totals.count) AS \"analytics_retained_totals.count\", MEASURE(analytics_retained_totals.minimum) AS \"analytics_retained_totals.minimum\", MEASURE(analytics_retained_totals.maximum) AS \"analytics_retained_totals.maximum\"\n  FROM analytics_retained_totals\n  WHERE analytics_retained_totals.id < '0'\n  GROUP BY 1\n  HAVING MEASURE(analytics_retained_totals.total) > '0'\n)\nSELECT\n  base.\"analytics_retained_totals.region\" AS \"analytics_retained_totals.region\", base.\"analytics_retained_totals.total\" AS \"analytics_retained_totals.total\", base.\"analytics_retained_totals.count\" AS \"analytics_retained_totals.count\", base.\"analytics_retained_totals.minimum\" AS \"analytics_retained_totals.minimum\", base.\"analytics_retained_totals.maximum\" AS \"analytics_retained_totals.maximum\"\n  FROM base\n  ORDER BY \"analytics_retained_totals.region\"\n  LIMIT 1\n  OFFSET 100",
+      "total": "SELECT SUM(retained.\"analytics_retained_totals.total\") AS \"analytics_retained_totals.total\", COALESCE(SUM(retained.\"analytics_retained_totals.count\"), 0) AS \"analytics_retained_totals.count\", MIN(retained.\"analytics_retained_totals.minimum\") AS \"analytics_retained_totals.minimum\", MAX(retained.\"analytics_retained_totals.maximum\") AS \"analytics_retained_totals.maximum\" FROM (SELECT\n  analytics_retained_totals.region AS \"analytics_retained_totals.region\", MEASURE(analytics_retained_totals.total) AS \"analytics_retained_totals.total\", MEASURE(analytics_retained_totals.count) AS \"analytics_retained_totals.count\", MEASURE(analytics_retained_totals.minimum) AS \"analytics_retained_totals.minimum\", MEASURE(analytics_retained_totals.maximum) AS \"analytics_retained_totals.maximum\"\n  FROM analytics_retained_totals\n  WHERE analytics_retained_totals.id < '0'\n  GROUP BY 1\n  HAVING MEASURE(analytics_retained_totals.total) > '0') AS retained",
+      "oracleSql": "WITH grouped AS (SELECT region, SUM(amount) AS total, COUNT(*) AS count,\n    MIN(amount) AS minimum, MAX(amount) AS maximum FROM analytics_retained_totals\n    WHERE channel='keep' AND id < 0 GROUP BY region HAVING SUM(amount) > 0)\n    SELECT  SUM(total) AS total, COALESCE(SUM(count),0) AS count,\n      MIN(minimum) AS minimum, MAX(maximum) AS maximum FROM grouped\n      "
+    },
+    {
+      "id": "HAVING",
+      "input": {
+        "dimensions": [
+          "analytics_retained_totals.region"
+        ],
+        "measures": [
+          "analytics_retained_totals.total",
+          "analytics_retained_totals.count",
+          "analytics_retained_totals.minimum",
+          "analytics_retained_totals.maximum"
+        ],
+        "filters": [
+          {
+            "member": "analytics_retained_totals.id",
+            "operator": "lt",
+            "values": [
+              "0"
+            ]
+          },
+          {
+            "member": "analytics_retained_totals.total",
+            "operator": "gt",
+            "values": [
+              "100"
+            ]
+          }
+        ],
+        "resultOps": {
+          "sort": [
+            {
+              "id": "analytics_retained_totals.region"
+            }
+          ],
+          "page": {
+            "limit": 1
+          }
+        }
+      },
+      "groupKeys": [],
+      "expectedDetail": [
+        [
+          "B",
+          150,
+          3,
+          50,
+          50
+        ]
+      ],
+      "expectedTotal": [
+        [
+          150,
+          3,
+          50,
+          50
+        ]
+      ],
+      "large": false,
+      "minimum": 100,
+      "expectedBaseGroups": 1,
+      "detail": "WITH base AS (\nSELECT\n  analytics_retained_totals.region AS \"analytics_retained_totals.region\", MEASURE(analytics_retained_totals.total) AS \"analytics_retained_totals.total\", MEASURE(analytics_retained_totals.count) AS \"analytics_retained_totals.count\", MEASURE(analytics_retained_totals.minimum) AS \"analytics_retained_totals.minimum\", MEASURE(analytics_retained_totals.maximum) AS \"analytics_retained_totals.maximum\"\n  FROM analytics_retained_totals\n  WHERE analytics_retained_totals.id < '0'\n  GROUP BY 1\n  HAVING MEASURE(analytics_retained_totals.total) > '100'\n)\nSELECT\n  base.\"analytics_retained_totals.region\" AS \"analytics_retained_totals.region\", base.\"analytics_retained_totals.total\" AS \"analytics_retained_totals.total\", base.\"analytics_retained_totals.count\" AS \"analytics_retained_totals.count\", base.\"analytics_retained_totals.minimum\" AS \"analytics_retained_totals.minimum\", base.\"analytics_retained_totals.maximum\" AS \"analytics_retained_totals.maximum\"\n  FROM base\n  ORDER BY \"analytics_retained_totals.region\"\n  LIMIT 1",
+      "total": "SELECT SUM(retained.\"analytics_retained_totals.total\") AS \"analytics_retained_totals.total\", COALESCE(SUM(retained.\"analytics_retained_totals.count\"), 0) AS \"analytics_retained_totals.count\", MIN(retained.\"analytics_retained_totals.minimum\") AS \"analytics_retained_totals.minimum\", MAX(retained.\"analytics_retained_totals.maximum\") AS \"analytics_retained_totals.maximum\" FROM (SELECT\n  analytics_retained_totals.region AS \"analytics_retained_totals.region\", MEASURE(analytics_retained_totals.total) AS \"analytics_retained_totals.total\", MEASURE(analytics_retained_totals.count) AS \"analytics_retained_totals.count\", MEASURE(analytics_retained_totals.minimum) AS \"analytics_retained_totals.minimum\", MEASURE(analytics_retained_totals.maximum) AS \"analytics_retained_totals.maximum\"\n  FROM analytics_retained_totals\n  WHERE analytics_retained_totals.id < '0'\n  GROUP BY 1\n  HAVING MEASURE(analytics_retained_totals.total) > '100') AS retained",
+      "oracleSql": "WITH grouped AS (SELECT region, SUM(amount) AS total, COUNT(*) AS count,\n    MIN(amount) AS minimum, MAX(amount) AS maximum FROM analytics_retained_totals\n    WHERE channel='keep' AND id < 0 GROUP BY region HAVING SUM(amount) > 100)\n    SELECT  SUM(total) AS total, COALESCE(SUM(count),0) AS count,\n      MIN(minimum) AS minimum, MAX(maximum) AS maximum FROM grouped\n      "
+    },
+    {
+      "id": "EMPTY-BASE",
+      "input": {
+        "dimensions": [
+          "analytics_retained_totals.region"
+        ],
+        "measures": [
+          "analytics_retained_totals.total",
+          "analytics_retained_totals.count",
+          "analytics_retained_totals.minimum",
+          "analytics_retained_totals.maximum"
+        ],
+        "filters": [
+          {
+            "member": "analytics_retained_totals.id",
+            "operator": "lt",
+            "values": [
+              "0"
+            ]
+          },
+          {
+            "member": "analytics_retained_totals.total",
+            "operator": "gt",
+            "values": [
+              "1000"
+            ]
+          }
+        ],
+        "resultOps": {
+          "sort": [
+            {
+              "id": "analytics_retained_totals.region"
+            }
+          ],
+          "page": {
+            "limit": 1
+          }
+        }
+      },
+      "groupKeys": [],
+      "expectedDetail": [],
+      "expectedTotal": [
+        [
+          null,
+          0,
+          null,
+          null
+        ]
+      ],
+      "large": false,
+      "minimum": 1000,
+      "expectedBaseGroups": 0,
+      "detail": "WITH base AS (\nSELECT\n  analytics_retained_totals.region AS \"analytics_retained_totals.region\", MEASURE(analytics_retained_totals.total) AS \"analytics_retained_totals.total\", MEASURE(analytics_retained_totals.count) AS \"analytics_retained_totals.count\", MEASURE(analytics_retained_totals.minimum) AS \"analytics_retained_totals.minimum\", MEASURE(analytics_retained_totals.maximum) AS \"analytics_retained_totals.maximum\"\n  FROM analytics_retained_totals\n  WHERE analytics_retained_totals.id < '0'\n  GROUP BY 1\n  HAVING MEASURE(analytics_retained_totals.total) > '1000'\n)\nSELECT\n  base.\"analytics_retained_totals.region\" AS \"analytics_retained_totals.region\", base.\"analytics_retained_totals.total\" AS \"analytics_retained_totals.total\", base.\"analytics_retained_totals.count\" AS \"analytics_retained_totals.count\", base.\"analytics_retained_totals.minimum\" AS \"analytics_retained_totals.minimum\", base.\"analytics_retained_totals.maximum\" AS \"analytics_retained_totals.maximum\"\n  FROM base\n  ORDER BY \"analytics_retained_totals.region\"\n  LIMIT 1",
+      "total": "SELECT SUM(retained.\"analytics_retained_totals.total\") AS \"analytics_retained_totals.total\", COALESCE(SUM(retained.\"analytics_retained_totals.count\"), 0) AS \"analytics_retained_totals.count\", MIN(retained.\"analytics_retained_totals.minimum\") AS \"analytics_retained_totals.minimum\", MAX(retained.\"analytics_retained_totals.maximum\") AS \"analytics_retained_totals.maximum\" FROM (SELECT\n  analytics_retained_totals.region AS \"analytics_retained_totals.region\", MEASURE(analytics_retained_totals.total) AS \"analytics_retained_totals.total\", MEASURE(analytics_retained_totals.count) AS \"analytics_retained_totals.count\", MEASURE(analytics_retained_totals.minimum) AS \"analytics_retained_totals.minimum\", MEASURE(analytics_retained_totals.maximum) AS \"analytics_retained_totals.maximum\"\n  FROM analytics_retained_totals\n  WHERE analytics_retained_totals.id < '0'\n  GROUP BY 1\n  HAVING MEASURE(analytics_retained_totals.total) > '1000') AS retained",
+      "oracleSql": "WITH grouped AS (SELECT region, SUM(amount) AS total, COUNT(*) AS count,\n    MIN(amount) AS minimum, MAX(amount) AS maximum FROM analytics_retained_totals\n    WHERE channel='keep' AND id < 0 GROUP BY region HAVING SUM(amount) > 1000)\n    SELECT  SUM(total) AS total, COALESCE(SUM(count),0) AS count,\n      MIN(minimum) AS minimum, MAX(maximum) AS maximum FROM grouped\n      "
+    },
+    {
+      "id": "REGION-SUBTOTAL",
+      "input": {
+        "dimensions": [
+          "analytics_retained_totals.region"
+        ],
+        "measures": [
+          "analytics_retained_totals.total",
+          "analytics_retained_totals.count",
+          "analytics_retained_totals.minimum",
+          "analytics_retained_totals.maximum"
+        ],
+        "filters": [
+          {
+            "member": "analytics_retained_totals.id",
+            "operator": "lt",
+            "values": [
+              "0"
+            ]
+          },
+          {
+            "member": "analytics_retained_totals.total",
+            "operator": "gt",
+            "values": [
+              "0"
+            ]
+          }
+        ],
+        "resultOps": {
+          "sort": [
+            {
+              "id": "analytics_retained_totals.region"
+            }
+          ],
+          "page": {
+            "limit": 1
+          }
+        }
+      },
+      "groupKeys": [
+        "analytics_retained_totals.region"
+      ],
+      "expectedDetail": [
+        [
+          "A",
+          50,
+          2,
+          25,
+          25
+        ]
+      ],
+      "expectedTotal": [
+        [
+          "A",
+          50,
+          2,
+          25,
+          25
+        ],
+        [
+          "B",
+          150,
+          3,
+          50,
+          50
+        ]
+      ],
+      "large": false,
+      "minimum": 0,
+      "expectedBaseGroups": 2,
+      "detail": "WITH base AS (\nSELECT\n  analytics_retained_totals.region AS \"analytics_retained_totals.region\", MEASURE(analytics_retained_totals.total) AS \"analytics_retained_totals.total\", MEASURE(analytics_retained_totals.count) AS \"analytics_retained_totals.count\", MEASURE(analytics_retained_totals.minimum) AS \"analytics_retained_totals.minimum\", MEASURE(analytics_retained_totals.maximum) AS \"analytics_retained_totals.maximum\"\n  FROM analytics_retained_totals\n  WHERE analytics_retained_totals.id < '0'\n  GROUP BY 1\n  HAVING MEASURE(analytics_retained_totals.total) > '0'\n)\nSELECT\n  base.\"analytics_retained_totals.region\" AS \"analytics_retained_totals.region\", base.\"analytics_retained_totals.total\" AS \"analytics_retained_totals.total\", base.\"analytics_retained_totals.count\" AS \"analytics_retained_totals.count\", base.\"analytics_retained_totals.minimum\" AS \"analytics_retained_totals.minimum\", base.\"analytics_retained_totals.maximum\" AS \"analytics_retained_totals.maximum\"\n  FROM base\n  ORDER BY \"analytics_retained_totals.region\"\n  LIMIT 1",
+      "total": "SELECT retained.\"analytics_retained_totals.region\" AS \"analytics_retained_totals.region\", SUM(retained.\"analytics_retained_totals.total\") AS \"analytics_retained_totals.total\", COALESCE(SUM(retained.\"analytics_retained_totals.count\"), 0) AS \"analytics_retained_totals.count\", MIN(retained.\"analytics_retained_totals.minimum\") AS \"analytics_retained_totals.minimum\", MAX(retained.\"analytics_retained_totals.maximum\") AS \"analytics_retained_totals.maximum\" FROM (SELECT\n  analytics_retained_totals.region AS \"analytics_retained_totals.region\", MEASURE(analytics_retained_totals.total) AS \"analytics_retained_totals.total\", MEASURE(analytics_retained_totals.count) AS \"analytics_retained_totals.count\", MEASURE(analytics_retained_totals.minimum) AS \"analytics_retained_totals.minimum\", MEASURE(analytics_retained_totals.maximum) AS \"analytics_retained_totals.maximum\"\n  FROM analytics_retained_totals\n  WHERE analytics_retained_totals.id < '0'\n  GROUP BY 1\n  HAVING MEASURE(analytics_retained_totals.total) > '0') AS retained GROUP BY retained.\"analytics_retained_totals.region\"",
+      "oracleSql": "WITH grouped AS (SELECT region, SUM(amount) AS total, COUNT(*) AS count,\n    MIN(amount) AS minimum, MAX(amount) AS maximum FROM analytics_retained_totals\n    WHERE channel='keep' AND id < 0 GROUP BY region HAVING SUM(amount) > 0)\n    SELECT region, SUM(total) AS total, COALESCE(SUM(count),0) AS count,\n      MIN(minimum) AS minimum, MAX(maximum) AS maximum FROM grouped\n      GROUP BY region ORDER BY region"
+    },
+    {
+      "id": "COMPLETE-GLOBAL-PAGE",
+      "input": {
+        "dimensions": [
+          "analytics_retained_totals.region"
+        ],
+        "measures": [
+          "analytics_retained_totals.total",
+          "analytics_retained_totals.count",
+          "analytics_retained_totals.minimum",
+          "analytics_retained_totals.maximum"
+        ],
+        "filters": [
+          {
+            "member": "analytics_retained_totals.id",
+            "operator": "gt",
+            "values": [
+              "0"
+            ]
+          },
+          {
+            "member": "analytics_retained_totals.total",
+            "operator": "gt",
+            "values": [
+              "0"
+            ]
+          }
+        ],
+        "resultOps": {
+          "sort": [
+            {
+              "id": "analytics_retained_totals.region"
+            }
+          ],
+          "page": {
+            "limit": 1,
+            "offset": 10000
+          }
+        }
+      },
+      "groupKeys": [],
+      "expectedDetail": [
+        [
+          "00010001",
+          10001,
+          1,
+          10001,
+          10001
+        ]
+      ],
+      "expectedTotal": [
+        [
+          1800090001,
+          60001,
+          1,
+          60001
+        ]
+      ],
+      "large": true,
+      "minimum": 0,
+      "expectedBaseGroups": 60001,
+      "detail": "WITH base AS (\nSELECT\n  analytics_retained_totals.region AS \"analytics_retained_totals.region\", MEASURE(analytics_retained_totals.total) AS \"analytics_retained_totals.total\", MEASURE(analytics_retained_totals.count) AS \"analytics_retained_totals.count\", MEASURE(analytics_retained_totals.minimum) AS \"analytics_retained_totals.minimum\", MEASURE(analytics_retained_totals.maximum) AS \"analytics_retained_totals.maximum\"\n  FROM analytics_retained_totals\n  WHERE analytics_retained_totals.id > '0'\n  GROUP BY 1\n  HAVING MEASURE(analytics_retained_totals.total) > '0'\n)\nSELECT\n  base.\"analytics_retained_totals.region\" AS \"analytics_retained_totals.region\", base.\"analytics_retained_totals.total\" AS \"analytics_retained_totals.total\", base.\"analytics_retained_totals.count\" AS \"analytics_retained_totals.count\", base.\"analytics_retained_totals.minimum\" AS \"analytics_retained_totals.minimum\", base.\"analytics_retained_totals.maximum\" AS \"analytics_retained_totals.maximum\"\n  FROM base\n  ORDER BY \"analytics_retained_totals.region\"\n  LIMIT 1\n  OFFSET 10000",
+      "total": "SELECT SUM(retained.\"analytics_retained_totals.total\") AS \"analytics_retained_totals.total\", COALESCE(SUM(retained.\"analytics_retained_totals.count\"), 0) AS \"analytics_retained_totals.count\", MIN(retained.\"analytics_retained_totals.minimum\") AS \"analytics_retained_totals.minimum\", MAX(retained.\"analytics_retained_totals.maximum\") AS \"analytics_retained_totals.maximum\" FROM (SELECT\n  analytics_retained_totals.region AS \"analytics_retained_totals.region\", MEASURE(analytics_retained_totals.total) AS \"analytics_retained_totals.total\", MEASURE(analytics_retained_totals.count) AS \"analytics_retained_totals.count\", MEASURE(analytics_retained_totals.minimum) AS \"analytics_retained_totals.minimum\", MEASURE(analytics_retained_totals.maximum) AS \"analytics_retained_totals.maximum\"\n  FROM analytics_retained_totals\n  WHERE analytics_retained_totals.id > '0'\n  GROUP BY 1\n  HAVING MEASURE(analytics_retained_totals.total) > '0') AS retained",
+      "oracleSql": "WITH grouped AS (SELECT region, SUM(amount) AS total, COUNT(*) AS count,\n    MIN(amount) AS minimum, MAX(amount) AS maximum FROM analytics_retained_totals\n    WHERE channel='keep' AND id > 0 GROUP BY region HAVING SUM(amount) > 0)\n    SELECT  SUM(total) AS total, COALESCE(SUM(count),0) AS count,\n      MIN(minimum) AS minimum, MAX(maximum) AS maximum FROM grouped\n      "
+    },
+    {
+      "id": "COMPLETE-HAVING",
+      "input": {
+        "dimensions": [
+          "analytics_retained_totals.region"
+        ],
+        "measures": [
+          "analytics_retained_totals.total",
+          "analytics_retained_totals.count",
+          "analytics_retained_totals.minimum",
+          "analytics_retained_totals.maximum"
+        ],
+        "filters": [
+          {
+            "member": "analytics_retained_totals.id",
+            "operator": "gt",
+            "values": [
+              "0"
+            ]
+          },
+          {
+            "member": "analytics_retained_totals.total",
+            "operator": "gt",
+            "values": [
+              "50000"
+            ]
+          }
+        ],
+        "resultOps": {
+          "sort": [
+            {
+              "id": "analytics_retained_totals.region"
+            }
+          ],
+          "page": {
+            "limit": 1
+          }
+        }
+      },
+      "groupKeys": [],
+      "expectedDetail": [
+        [
+          "00050001",
+          50001,
+          1,
+          50001,
+          50001
+        ]
+      ],
+      "expectedTotal": [
+        [
+          550065001,
+          10001,
+          50001,
+          60001
+        ]
+      ],
+      "large": true,
+      "minimum": 50000,
+      "expectedBaseGroups": 10001,
+      "detail": "WITH base AS (\nSELECT\n  analytics_retained_totals.region AS \"analytics_retained_totals.region\", MEASURE(analytics_retained_totals.total) AS \"analytics_retained_totals.total\", MEASURE(analytics_retained_totals.count) AS \"analytics_retained_totals.count\", MEASURE(analytics_retained_totals.minimum) AS \"analytics_retained_totals.minimum\", MEASURE(analytics_retained_totals.maximum) AS \"analytics_retained_totals.maximum\"\n  FROM analytics_retained_totals\n  WHERE analytics_retained_totals.id > '0'\n  GROUP BY 1\n  HAVING MEASURE(analytics_retained_totals.total) > '50000'\n)\nSELECT\n  base.\"analytics_retained_totals.region\" AS \"analytics_retained_totals.region\", base.\"analytics_retained_totals.total\" AS \"analytics_retained_totals.total\", base.\"analytics_retained_totals.count\" AS \"analytics_retained_totals.count\", base.\"analytics_retained_totals.minimum\" AS \"analytics_retained_totals.minimum\", base.\"analytics_retained_totals.maximum\" AS \"analytics_retained_totals.maximum\"\n  FROM base\n  ORDER BY \"analytics_retained_totals.region\"\n  LIMIT 1",
+      "total": "SELECT SUM(retained.\"analytics_retained_totals.total\") AS \"analytics_retained_totals.total\", COALESCE(SUM(retained.\"analytics_retained_totals.count\"), 0) AS \"analytics_retained_totals.count\", MIN(retained.\"analytics_retained_totals.minimum\") AS \"analytics_retained_totals.minimum\", MAX(retained.\"analytics_retained_totals.maximum\") AS \"analytics_retained_totals.maximum\" FROM (SELECT\n  analytics_retained_totals.region AS \"analytics_retained_totals.region\", MEASURE(analytics_retained_totals.total) AS \"analytics_retained_totals.total\", MEASURE(analytics_retained_totals.count) AS \"analytics_retained_totals.count\", MEASURE(analytics_retained_totals.minimum) AS \"analytics_retained_totals.minimum\", MEASURE(analytics_retained_totals.maximum) AS \"analytics_retained_totals.maximum\"\n  FROM analytics_retained_totals\n  WHERE analytics_retained_totals.id > '0'\n  GROUP BY 1\n  HAVING MEASURE(analytics_retained_totals.total) > '50000') AS retained",
+      "oracleSql": "WITH grouped AS (SELECT region, SUM(amount) AS total, COUNT(*) AS count,\n    MIN(amount) AS minimum, MAX(amount) AS maximum FROM analytics_retained_totals\n    WHERE channel='keep' AND id > 0 GROUP BY region HAVING SUM(amount) > 50000)\n    SELECT  SUM(total) AS total, COALESCE(SUM(count),0) AS count,\n      MIN(minimum) AS minimum, MAX(maximum) AS maximum FROM grouped\n      "
+    }
+  ]
+}

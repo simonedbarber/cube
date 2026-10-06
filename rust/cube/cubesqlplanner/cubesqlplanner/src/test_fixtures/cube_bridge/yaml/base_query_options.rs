@@ -1,5 +1,5 @@
 use crate::cube_bridge::base_query_options::{
-    FilterItem, FilterValue, MaskedMemberItem, OrderByItem, TimeDimension,
+    FilterItem, FilterValue, MaskedMemberItem, OrderByItem, RowLevelFilterItem, TimeDimension,
 };
 use serde::de;
 use serde::{Deserialize, Deserializer};
@@ -49,6 +49,8 @@ pub struct YamlBaseQueryOptions {
     pub timezone: Option<String>,
     #[serde(default, rename = "maskedMembers")]
     pub masked_members: Option<Vec<MaskedMemberItem>>,
+    #[serde(default, rename = "rowLevelFilters")]
+    pub row_level_filters: Option<Vec<RowLevelFilterItem>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -61,6 +63,7 @@ pub struct YamlOrderByItem {
 impl YamlOrderByItem {
     pub fn into_order_by_item(self) -> OrderByItem {
         OrderByItem {
+            nulls_first: None,
             id: self.id,
             desc: self.desc,
         }

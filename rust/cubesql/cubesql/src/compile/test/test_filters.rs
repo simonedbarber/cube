@@ -285,3 +285,95 @@ LIMIT 5000
         }
     );
 }
+
+/// SQL inequality must not inherit public Cube notEquals' NULL-inclusive policy.
+/// Evaluate the actual emitted Boolean tree to catch guards hoisted across OR.
+#[tokio::test]
+async fn test_sql_not_equal_preserves_null_rejection_and_branch_locality() {
+    fn matches(
+        filter: &V1LoadRequestQueryFilterItem,
+        gender: Option<&str>,
+        price: Option<&str>,
+    ) -> bool {
+        if let Some(children) = &filter.and {
+            return children.iter().all(|child| {
+                matches(
+                    &serde_json::from_value(child.clone()).unwrap(),
+                    gender,
+                    price,
+                )
+            });
+        }
+        if let Some(children) = &filter.or {
+            return children.iter().any(|child| {
+                matches(
+                    &serde_json::from_value(child.clone()).unwrap(),
+                    gender,
+                    price,
+                )
+            });
+        }
+        let value = match filter.member.as_deref().unwrap() {
+            "KibanaSampleDataEcommerce.customer_gender" => gender,
+            "KibanaSampleDataEcommerce.taxful_total_price" => price,
+            member => panic!("unexpected member {}", member),
+        };
+        match filter.operator.as_deref().unwrap() {
+            "set" => value.is_some(),
+            "notSet" => value.is_none(),
+            "equals" => value.is_some_and(|value| {
+                filter
+                    .values
+                    .as_ref()
+                    .unwrap()
+                    .iter()
+                    .any(|item| item == value)
+            }),
+            // This is the existing public JSON behavior: NULL is included.
+            "notEquals" => value.is_none_or(|value| {
+                filter
+                    .values
+                    .as_ref()
+                    .unwrap()
+                    .iter()
+                    .all(|item| item != value)
+            }),
+            operator => panic!("unexpected operator {}", operator),
+        }
+    }
+    init_testing_logger();
+    let cases = [
+        ("customer_gender <> 'female'", vec![false, false, true, true]),
+        ("customer_gender != 'female'", vec![false, false, true, true]),
+        ("taxful_total_price <> 2", vec![false, false, true, true]),
+        ("taxful_total_price != 2", vec![false, false, true, true]),
+        ("customer_gender <> 'female' OR customer_gender IS NULL", vec![true, false, true, true]),
+        ("(customer_gender <> 'female' AND taxful_total_price = 1) OR taxful_total_price = 2", vec![false, true, true, false]),
+        ("customer_gender = 'female' OR (customer_gender <> 'female' AND taxful_total_price = 1)", vec![false, true, true, false]),
+        ("customer_gender = 'female'", vec![false, true, false, false]),
+    ];
+    let rows = [
+        (None, None),
+        (Some("female"), Some("2")),
+        (Some("male"), Some("1")),
+        (Some("male"), Some("3")),
+    ];
+    for (predicate, expected) in cases {
+        let plan = convert_select_to_query_plan(
+            format!("SELECT customer_gender FROM KibanaSampleDataEcommerce WHERE {predicate} GROUP BY 1"),
+            DatabaseProtocol::PostgreSQL,
+        ).await;
+        let request = &plan.as_logical_plan().find_cube_scan().request;
+        let filters = request.filters.as_ref().expect("semantic filters");
+        assert!(!filters.is_empty(), "{}", predicate);
+        let actual: Vec<_> = rows
+            .iter()
+            .map(|(gender, price)| {
+                filters
+                    .iter()
+                    .all(|filter| matches(filter, *gender, *price))
+            })
+            .collect();
+        assert_eq!(actual, expected, "{}: {:?}", predicate, filters);
+    }
+}

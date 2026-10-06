@@ -14,8 +14,8 @@ pub enum ColumnType {
     Int32,
     Int64,
     Blob,
-    // true = Date32
-    // false = Date64
+    // true = Date64
+    // false = Date32
     Date(bool),
     Interval(IntervalUnit),
     Timestamp,

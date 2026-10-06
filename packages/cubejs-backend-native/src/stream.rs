@@ -2,7 +2,6 @@ use cubesql::compile::engine::df::scan::{
     transform_response, JsonColumnarValueObject, MemberField, RecordBatch, SchemaRef,
 };
 
-use std::cell::RefCell;
 use std::future::Future;
 
 use std::sync::{Arc, Mutex};
@@ -28,14 +27,21 @@ type Chunk = Option<Result<RecordBatch, CubeError>>;
 
 fn handle_on_drain(mut cx: FunctionContext) -> JsResult<JsUndefined> {
     let this = cx
-        .this::<JsBox<RefCell<OnDrainHandler>>>()?
-        .downcast_or_throw::<JsBox<RefCell<OnDrainHandler>>, _>(&mut cx)?;
-    this.borrow().on_drain();
+        .this::<JsBox<DrainNotifier>>()?
+        .downcast_or_throw::<JsBox<DrainNotifier>, _>(&mut cx)?;
+    this.semaphore.add_permits(1);
 
     Ok(cx.undefined())
 }
 
-#[derive(Clone)]
+// Stream-owned listeners retain only notification state. Retaining a rooted
+// stream or referenced channel here creates a native/JS cycle after completion.
+struct DrainNotifier {
+    semaphore: Arc<Semaphore>,
+}
+
+impl Finalize for DrainNotifier {}
+
 pub struct OnDrainHandler {
     channel: Arc<Channel>,
     js_stream: Arc<Root<JsObject>>,
@@ -61,7 +67,9 @@ impl OnDrainHandler {
 
     pub async fn handle(&self, js_stream_on_fn: Arc<Root<JsFunction>>) -> Result<(), CubeError> {
         let js_stream_obj = self.js_stream.clone();
-        let this = RefCell::new(self.clone());
+        let this = DrainNotifier {
+            semaphore: self.semaphore.clone(),
+        };
 
         call_js_fn(
             self.channel.clone(),
@@ -81,20 +89,24 @@ impl OnDrainHandler {
         )
         .await
     }
-
-    fn on_drain(&self) {
-        self.semaphore.add_permits(1);
-    }
 }
 
 fn handle_on_close(mut cx: FunctionContext) -> JsResult<JsUndefined> {
     let this = cx
-        .this::<JsBox<OnCloseHandler>>()?
-        .downcast_or_throw::<JsBox<OnCloseHandler>, _>(&mut cx)?;
-    this.on_close();
+        .this::<JsBox<CloseNotifier>>()?
+        .downcast_or_throw::<JsBox<CloseNotifier>, _>(&mut cx)?;
+    if let Some(sender) = this.sender.lock().unwrap().take() {
+        let _ = sender.send(());
+    }
 
     Ok(cx.undefined())
 }
+
+struct CloseNotifier {
+    sender: Arc<Mutex<Option<oneshot::Sender<()>>>>,
+}
+
+impl Finalize for CloseNotifier {}
 
 pub struct OnCloseHandler {
     channel: Arc<Channel>,
@@ -121,9 +133,7 @@ impl OnCloseHandler {
 
     pub async fn handle(&self, js_stream_on_fn: Arc<Root<JsFunction>>) -> Result<(), CubeError> {
         let js_stream_obj = self.js_stream.clone();
-        let handler = Self {
-            channel: self.channel.clone(),
-            js_stream: self.js_stream.clone(),
+        let handler = CloseNotifier {
             sender: self.sender.clone(),
         };
 
@@ -144,12 +154,6 @@ impl OnCloseHandler {
             js_stream_obj,
         )
         .await
-    }
-
-    fn on_close(&self) {
-        if let Some(sender) = self.sender.lock().unwrap().take() {
-            let _ = sender.send(());
-        }
     }
 }
 
@@ -186,6 +190,14 @@ impl JsWriteStream {
         let reject = bind_method(cx, reject_fn, obj_this)?;
         obj.set(cx, "reject", reject)?;
 
+        let on_cancel_fn = JsFunction::new(cx, js_stream_on_cancel)?;
+        let on_cancel = bind_method(cx, on_cancel_fn, obj_this)?;
+        obj.set(cx, "onCancel", on_cancel)?;
+
+        let is_cancelled_fn = JsFunction::new(cx, js_stream_is_cancelled)?;
+        let is_cancelled = bind_method(cx, is_cancelled_fn, obj_this)?;
+        obj.set(cx, "isCancelled", is_cancelled)?;
+
         Ok(obj)
     }
 
@@ -220,6 +232,15 @@ impl JsWriteStream {
             let _ = ready_sender.send(Err(CubeError::internal(err.to_string())));
         }
         let _ = self.sender.try_send(Some(Err(CubeError::internal(err))));
+    }
+
+    fn cancelled(&self) -> impl Future<Output = Result<(), CubeError>> {
+        let sender = self.sender.clone();
+        async move {
+            // Detect a dropped consumer even while no source chunk is ready.
+            sender.closed().await;
+            Ok(())
+        }
     }
 }
 
@@ -317,6 +338,23 @@ fn js_stream_reject(mut cx: FunctionContext) -> JsResult<JsUndefined> {
     let result = cx.argument::<JsString>(0)?;
     this.reject(result.value(&mut cx));
     Ok(cx.undefined())
+}
+
+fn js_stream_on_cancel(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+    let this = cx
+        .this::<JsValue>()?
+        .downcast_or_throw::<JsBox<JsWriteStream>, _>(&mut cx)?;
+    let callback = cx.argument::<JsFunction>(0)?.root(&mut cx);
+    let future = this.cancelled();
+    wait_for_future_and_execute_callback(this.tokio_handle.clone(), cx.channel(), callback, future);
+    Ok(cx.undefined())
+}
+
+fn js_stream_is_cancelled(mut cx: FunctionContext) -> JsResult<JsBoolean> {
+    let this = cx
+        .this::<JsValue>()?
+        .downcast_or_throw::<JsBox<JsWriteStream>, _>(&mut cx)?;
+    Ok(cx.boolean(this.sender.is_closed()))
 }
 
 pub async fn call_js_with_stream_as_callback(

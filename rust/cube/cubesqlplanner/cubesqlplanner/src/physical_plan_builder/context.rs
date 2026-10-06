@@ -3,6 +3,7 @@ use cubenativeutils::CubeError;
 use crate::physical_plan::sql_nodes::SqlNodesFactory;
 use crate::physical_plan::Schema;
 use crate::planner::planners::multi_stage::{EvaluationContext, TimeShiftState};
+use crate::planner::row_level_filters::RowLevelFilters;
 use crate::planner::MemberSymbol;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -26,6 +27,8 @@ pub(super) struct PushDownBuilderContext {
     pub multi_stage_schemas: HashMap<String, Rc<Schema>>,
     pub multi_stage_dimension_schemas: HashMap<Vec<String>, Rc<MultiStageDimensionContext>>,
     pub multi_stage_dimensions: Vec<String>,
+    // Set only when the current Query has moved its exact protected aggregate.
+    pub row_level_join_filters: Option<Rc<RowLevelFilters>>,
 }
 
 impl PushDownBuilderContext {

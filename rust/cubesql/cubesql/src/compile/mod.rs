@@ -1410,6 +1410,15 @@ ORDER BY \"COUNT(count)\" DESC"
                                     values: Some(vec!["".to_string()]),
                                     or: None,
                                     and: None,
+                                }),
+                                json!(V1LoadRequestQueryFilterItem {
+                                    member: Some(
+                                        "KibanaSampleDataEcommerce.customer_gender".to_string()
+                                    ),
+                                    operator: Some("set".to_string()),
+                                    values: None,
+                                    or: None,
+                                    and: None,
                                 })
                             ])
                         }),
@@ -3215,13 +3224,22 @@ limit
             ),
             (
                 "taxful_total_price <> -1".to_string(),
-                Some(vec![V1LoadRequestQueryFilterItem {
-                    member: Some("KibanaSampleDataEcommerce.taxful_total_price".to_string()),
-                    operator: Some("notEquals".to_string()),
-                    values: Some(vec!["-1".to_string()]),
-                    or: None,
-                    and: None,
-                }]),
+                Some(vec![
+                    V1LoadRequestQueryFilterItem {
+                        member: Some("KibanaSampleDataEcommerce.taxful_total_price".to_string()),
+                        operator: Some("notEquals".to_string()),
+                        values: Some(vec!["-1".to_string()]),
+                        or: None,
+                        and: None,
+                    },
+                    V1LoadRequestQueryFilterItem {
+                        member: Some("KibanaSampleDataEcommerce.taxful_total_price".to_string()),
+                        operator: Some("set".to_string()),
+                        values: None,
+                        or: None,
+                        and: None,
+                    },
+                ]),
                 None,
             ),
             // IN

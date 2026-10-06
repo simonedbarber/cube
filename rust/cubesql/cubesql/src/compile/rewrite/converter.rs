@@ -21,16 +21,17 @@ use crate::{
             JoinNullEqualsNull, JoinRightOn, LikeExprEscapeChar, LikeExprLikeType, LikeExprNegated,
             LikeType, LimitFetch, LimitSkip, LiteralExprValue, LiteralMemberRelation,
             LiteralMemberValue, LogicalPlanLanguage, MeasureName, MemberErrorError, OrderAsc,
-            OrderMember, OuterColumnExprColumn, OuterColumnExprDataType, ProjectionAlias,
-            ProjectionSplit, QueryParamIndex, ScalarFunctionExprFun, ScalarUDFExprFun,
-            ScalarVariableExprDataType, ScalarVariableExprVariable, SegmentMemberMember,
-            SortExprAsc, SortExprNullsFirst, SubqueryTypes, TableScanFetch, TableScanProjection,
-            TableScanSourceTableName, TableScanTableName, TableUDFExprFun, TimeDimensionDateRange,
-            TimeDimensionGranularity, TimeDimensionName, TryCastExprDataType, UnionAlias,
-            ValuesValues, WindowFunctionExprFun, WindowFunctionExprWindowFrame, WrappedSelectAlias,
-            WrappedSelectDistinct, WrappedSelectJoinJoinType, WrappedSelectLimit,
-            WrappedSelectOffset, WrappedSelectPushToCube, WrappedSelectSelectType,
-            WrappedSelectType, WrappedUnionAlias, WrappedUnionDistinct,
+            OrderMember, OrderNullsFirst, OuterColumnExprColumn, OuterColumnExprDataType,
+            ProjectionAlias, ProjectionSplit, QueryParamIndex, ScalarFunctionExprFun,
+            ScalarUDFExprFun, ScalarVariableExprDataType, ScalarVariableExprVariable,
+            SegmentMemberMember, SortExprAsc, SortExprNullsFirst, SubqueryTypes, TableScanFetch,
+            TableScanProjection, TableScanSourceTableName, TableScanTableName, TableUDFExprFun,
+            TimeDimensionDateRange, TimeDimensionGranularity, TimeDimensionName,
+            TryCastExprDataType, UnionAlias, ValuesValues, WindowFunctionExprFun,
+            WindowFunctionExprWindowFrame, WrappedSelectAlias, WrappedSelectDistinct,
+            WrappedSelectJoinJoinType, WrappedSelectLimit, WrappedSelectOffset,
+            WrappedSelectPushToCube, WrappedSelectSelectType, WrappedSelectType, WrappedUnionAlias,
+            WrappedUnionDistinct,
         },
         CubeContext,
     },
@@ -1969,10 +1970,16 @@ impl LanguageToLogicalPlanConverter {
 
                 query.segments = Some(segments);
 
+                let mut sql_order_nulls_first = Vec::new();
                 for o in order {
                     let order_params = match_params!(o, Order);
                     let order_member = match_data_node!(node_by_id, order_params[0], OrderMember);
                     let order_asc = match_data_node!(node_by_id, order_params[1], OrderAsc);
+                    sql_order_nulls_first.push(match_data_node!(
+                        node_by_id,
+                        order_params[2],
+                        OrderNullsFirst
+                    ));
                     query_order.push(vec![
                         order_member,
                         if order_asc {
@@ -2134,6 +2141,7 @@ impl LanguageToLogicalPlanConverter {
                     query,
                     self.auth_context.clone(),
                     CubeScanOptions {
+                        sql_order_nulls_first,
                         change_user,
                         max_records,
                         cache_mode: *cache_mode,

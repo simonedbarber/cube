@@ -5,19 +5,56 @@
     "test"
   ],
   "compilerOptions": {
-    "types": ["node", "jest"],
+    "types": [
+      "node",
+      "jest"
+    ],
     "outDir": "dist",
     "rootDir": ".",
+    "resolveJsonModule": true
   },
   "references": [
-    { "path": "../cubejs-backend-shared" },
-    { "path": "../cubejs-client-core" },
-    { "path": "../cubejs-client-ws-transport" },
-    { "path": "../cubejs-cubestore-driver" },
-    { "path": "../cubejs-ksql-driver" },
-    { "path": "../cubejs-postgres-driver" },
-    { "path": "../cubejs-query-orchestrator" },
-    { "path": "../cubejs-schema-compiler" },
-    { "path": "../cubejs-testing-shared" }
+    {
+      "path": "../cubejs-backend-shared"
+    },
+    {
+      "path": "../cubejs-client-core"
+    },
+    {
+      "path": "../cubejs-client-ws-transport"
+    },
+    {
+      "path": "../cubejs-cubestore-driver"
+    },
+    {
+      "path": "../cubejs-ksql-driver"
+    },
+    {
+      "path": "../cubejs-postgres-driver"
+    },
+    {
+      "path": "../cubejs-query-orchestrator"
+    },
+    {
+      "path": "../cubejs-schema-compiler"
+    },
+    {
+      "path": "../cubejs-testing-shared"
+    },
+    {
+      "path": "../cubejs-api-gateway"
+    },
+    {
+      "path": "../cubejs-backend-native"
+    },
+    {
+      "path": "../cubejs-base-driver"
+    },
+    {
+      "path": "../cubejs-duckdb-driver"
+    },
+    {
+      "path": "../cubejs-server-core"
+    }
   ]
 }

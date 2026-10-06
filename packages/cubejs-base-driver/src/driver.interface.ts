@@ -136,6 +136,8 @@ export type StreamOptions = {
    * database job/query for tracing (e.g. BigQuery job labels).
    */
   requestId?: string;
+  /** Cancels source work, including setup before the first streamed fields arrive. */
+  signal?: AbortSignal;
 };
 
 export type StreamingSourceOptions = {

@@ -44,6 +44,13 @@ use crate::{
 
 #[derive(Debug, Clone, Serialize)]
 pub struct LoadRequestMeta {
+    /// Private SQL transport metadata; never a public REST query tuple extension.
+    #[serde(
+        rename = "sqlOrderNullsFirst",
+        skip_serializing_if = "Vec::is_empty",
+        default
+    )]
+    sql_order_nulls_first: Vec<bool>,
     protocol: String,
     #[serde(rename = "apiType")]
     api_type: String,
@@ -58,11 +65,16 @@ impl LoadRequestMeta {
     #[must_use]
     pub fn new(protocol: String, api_type: String, app_name: Option<String>) -> Self {
         Self {
+            sql_order_nulls_first: vec![],
             protocol,
             api_type,
             app_name,
             change_user: None,
         }
+    }
+
+    pub fn set_sql_order_nulls_first(&mut self, values: Vec<bool>) {
+        self.sql_order_nulls_first = values;
     }
 
     pub fn change_user(&self) -> Option<String> {
@@ -344,7 +356,7 @@ impl TransportService for HttpTransport {
             HashMap::new(),
             HashMap::new(),
             Uuid::new_v4(),
-        ));
+        )?);
 
         *store = Some(MetaCacheBucket {
             lifetime: Instant::now(),
@@ -378,6 +390,12 @@ impl TransportService for HttpTransport {
         cache_mode: Option<CacheMode>,
         _throw_continue_wait: bool,
     ) -> Result<Vec<RecordBatch>, CubeError> {
+        if !meta.sql_order_nulls_first.is_empty() {
+            return Err(CubeError::user(
+                "Explicit SQL null placement is not supported by the standalone HTTP transport"
+                    .to_string(),
+            ));
+        }
         if meta.change_user().is_some() {
             return Err(CubeError::user(
                 "Changing security context (__user) is not supported in the standalone mode"
@@ -1298,6 +1316,30 @@ mod tests {
                 .await
                 .and_then(|v| v.as_object().map(|o| o.len())),
             Some(2)
+        );
+    }
+}
+
+#[cfg(test)]
+mod sql_order_transport_tests {
+    use super::*;
+
+    #[test]
+    fn placement_is_private_metadata_and_omission_is_preserved() {
+        let mut meta = LoadRequestMeta::new("postgres".to_string(), "sql".to_string(), None);
+        assert!(serde_json::to_value(&meta)
+            .unwrap()
+            .get("sqlOrderNullsFirst")
+            .is_none());
+        meta.set_sql_order_nulls_first(vec![true, false]);
+        assert_eq!(
+            serde_json::to_value(&meta).unwrap()["sqlOrderNullsFirst"],
+            serde_json::json!([true, false])
+        );
+        meta.set_sql_order_nulls_first(vec![false, true]);
+        assert_eq!(
+            serde_json::to_value(&meta).unwrap()["sqlOrderNullsFirst"],
+            serde_json::json!([false, true])
         );
     }
 }

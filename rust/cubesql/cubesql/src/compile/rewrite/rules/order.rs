@@ -17,8 +17,8 @@ use crate::{
             rewriter::{CubeEGraph, CubeRewrite, RewriteRules},
             sort, sort_exp, sort_exp_empty_tail, sort_expr, sort_projection_pullup_replacer,
             sort_projection_pushdown_replacer, transforming_chain_rewrite, transforming_rewrite,
-            ColumnExprColumn, LogicalPlanLanguage, OrderAsc, OrderMember,
-            OrderReplacerColumnNameToMember, ProjectionAlias, SortExprAsc,
+            ColumnExprColumn, LogicalPlanLanguage, OrderAsc, OrderMember, OrderNullsFirst,
+            OrderReplacerColumnNameToMember, ProjectionAlias, SortExprAsc, SortExprNullsFirst,
             SortProjectionPushdownReplacerColumnToExpr,
         },
     },
@@ -76,10 +76,18 @@ impl RewriteRules for OrderRules {
                     "?aliases",
                 ),
                 cube_scan_order(
-                    order("?order_member", "?order_asc"),
+                    order("?order_member", "?order_asc", "?order_nulls_first"),
                     order_replacer("?tail_group_expr", "?aliases"),
                 ),
-                self.transform_order("?expr", "?asc", "?aliases", "?order_member", "?order_asc"),
+                self.transform_order(
+                    "?expr",
+                    "?asc",
+                    "?nulls_first",
+                    "?aliases",
+                    "?order_member",
+                    "?order_asc",
+                    "?order_nulls_first",
+                ),
             ),
             rewrite(
                 "order-replacer-tail-proj",
@@ -236,12 +244,16 @@ impl OrderRules {
         &self,
         expr_var: &'static str,
         asc_var: &'static str,
+        nulls_first_var: &'static str,
         column_name_to_member_var: &'static str,
         order_member_var: &'static str,
         order_asc_var: &'static str,
+        order_nulls_first_var: &'static str,
     ) -> impl Fn(&mut CubeEGraph, &mut Subst) -> bool {
         let expr_var = expr_var.parse().unwrap();
         let asc_var = asc_var.parse().unwrap();
+        let nulls_first_var = nulls_first_var.parse().unwrap();
+        let order_nulls_first_var = order_nulls_first_var.parse().unwrap();
         let column_name_to_member_var = column_name_to_member_var.parse().unwrap();
         let order_member_var = order_member_var.parse().unwrap();
         let order_asc_var = order_asc_var.parse().unwrap();
@@ -250,12 +262,22 @@ impl OrderRules {
                 egraph[subst[expr_var]].data.original_expr.clone()
             {
                 let column_name = expr_column_name(&expr, &None);
-                for asc in var_iter!(egraph[subst[asc_var]], SortExprAsc) {
-                    let asc = *asc;
-                    for column_name_to_member in var_iter!(
-                        egraph[subst[column_name_to_member_var]],
-                        OrderReplacerColumnNameToMember
-                    ) {
+                // Detach scalar and member-map candidates before mutating the
+                // egraph. Iterators over its nodes must not span egraph.add().
+                let directions = var_iter!(egraph[subst[asc_var]], SortExprAsc)
+                    .copied()
+                    .collect::<Vec<_>>();
+                let placements = var_iter!(egraph[subst[nulls_first_var]], SortExprNullsFirst)
+                    .copied()
+                    .collect::<Vec<_>>();
+                let member_maps = var_iter!(
+                    egraph[subst[column_name_to_member_var]],
+                    OrderReplacerColumnNameToMember
+                )
+                .cloned()
+                .collect::<Vec<_>>();
+                for asc in directions {
+                    for column_name_to_member in &member_maps {
                         if let Some((_, Some(member_name))) = column_name_to_member
                             .iter()
                             .find(|(c, _)| c == &column_name)
@@ -272,7 +294,15 @@ impl OrderRules {
                                 order_asc_var,
                                 egraph.add(LogicalPlanLanguage::OrderAsc(OrderAsc(asc))),
                             );
-                            return true;
+                            for value in placements.iter().copied() {
+                                subst.insert(
+                                    order_nulls_first_var,
+                                    egraph.add(LogicalPlanLanguage::OrderNullsFirst(
+                                        OrderNullsFirst(value),
+                                    )),
+                                );
+                                return true;
+                            }
                         }
                     }
                 }

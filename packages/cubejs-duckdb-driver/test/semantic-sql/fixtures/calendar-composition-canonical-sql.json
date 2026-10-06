@@ -1,0 +1,473 @@
+{
+  "modelSource": "cube('analytics_calendar_months', {\n  sql: \"SELECT * FROM cssql_oracle.analytics_calendar_alignment WHERE lane = 'months'\", access_policy: [{ group: 'semantic_analyst', member_level: { includes: '*' }, row_level: { filters: [{ member: 'tenant', operator: 'equals', values: ['A'] }] } }],\n  dimensions: { id: { sql: 'id', type: 'string', primary_key: true, public: true }, tenant: { sql: 'tenant', type: 'string' }, observed_at: { sql: 'observed_at', type: 'time' } }, measures: { amount: { sql: 'amount', type: 'sum' } }\n});cube('analytics_calendar_leap', { sql: `WITH daily AS (\n    SELECT tenant, CAST(observed_at AT TIME ZONE 'UTC' AS date) AS day, SUM(amount) AS value\n    FROM cssql_oracle.analytics_calendar_alignment WHERE lane = 'leap' GROUP BY 1,2)\n    SELECT c.tenant || ':' || CAST(c.day AS text) AS id, c.tenant, CAST(c.day AS timestamp) AS observed_at,\n      CAST(m.prior_day AS text) AS prior_key, c.value AS current_value, p.value AS prior_value\n    FROM daily c JOIN cssql_oracle.analytics_calendar_mapping m ON m.current_day = c.day AND m.calendar_key = 'leap' AND m.version = 1\n    LEFT JOIN daily p ON p.tenant = c.tenant AND p.day = m.prior_day`, access_policy: [{ group: 'semantic_analyst', member_level: { includes: '*' }, row_level: { filters: [{ member: 'tenant', operator: 'equals', values: ['A'] }] } }],\n    dimensions: { id: { sql: 'id', type: 'string', primary_key: true, public: true }, tenant: { sql: 'tenant', type: 'string' }, observed_at: { sql: 'observed_at', type: 'time' }, prior_key: { sql: 'prior_key', type: 'string' } },\n    measures: { amount: { sql: 'current_value', type: 'sum' }, prior: { sql: 'prior_value', type: 'sum' } }\n  });\ncube('analytics_calendar_reporting', { sql: `WITH daily AS (\n    SELECT tenant, CAST(observed_at AT TIME ZONE 'UTC' AS date) AS day, SUM(amount) AS value\n    FROM cssql_oracle.analytics_calendar_alignment WHERE lane = 'reporting' GROUP BY 1,2)\n    SELECT c.tenant || ':' || CAST(c.day AS text) AS id, c.tenant, CAST(c.day AS timestamp) AS observed_at,\n      CAST(m.prior_day AS text) AS prior_key, c.value AS current_value, p.value AS prior_value\n    FROM daily c JOIN cssql_oracle.analytics_calendar_mapping m ON m.current_day = c.day AND m.calendar_key = 'reporting' AND m.version = 1\n    LEFT JOIN daily p ON p.tenant = c.tenant AND p.day = m.prior_day`, access_policy: [{ group: 'semantic_analyst', member_level: { includes: '*' }, row_level: { filters: [{ member: 'tenant', operator: 'equals', values: ['A'] }] } }],\n    dimensions: { id: { sql: 'id', type: 'string', primary_key: true, public: true }, tenant: { sql: 'tenant', type: 'string' }, observed_at: { sql: 'observed_at', type: 'time' }, prior_key: { sql: 'prior_key', type: 'string' } },\n    measures: { amount: { sql: 'current_value', type: 'sum' }, prior: { sql: 'prior_value', type: 'sum' } }\n  });cube('analytics_calendar_utc', {\n  sql: `SELECT *, to_char((date_trunc('day', observed_at AT TIME ZONE 'UTC') AT TIME ZONE 'UTC') AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS bucket_start_utc FROM cssql_oracle.analytics_calendar_alignment WHERE lane = 'dst'`, access_policy: [{ group: 'semantic_analyst', member_level: { includes: '*' }, row_level: { filters: [{ member: 'tenant', operator: 'equals', values: ['A'] }] } }],\n  dimensions: { id: { sql: 'id', type: 'string', primary_key: true, public: true }, tenant: { sql: 'tenant', type: 'string' }, observed_at: { sql: 'observed_at', type: 'time' }, bucket_start_utc: { sql: 'bucket_start_utc', type: 'string' } },\n  measures: { amount: { sql: 'amount', type: 'sum' } }\n});\ncube('analytics_calendar_ny', {\n  sql: `SELECT *, to_char((date_trunc('day', observed_at AT TIME ZONE 'America/New_York') AT TIME ZONE 'America/New_York') AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS bucket_start_utc FROM cssql_oracle.analytics_calendar_alignment WHERE lane = 'dst'`, access_policy: [{ group: 'semantic_analyst', member_level: { includes: '*' }, row_level: { filters: [{ member: 'tenant', operator: 'equals', values: ['A'] }] } }],\n  dimensions: { id: { sql: 'id', type: 'string', primary_key: true, public: true }, tenant: { sql: 'tenant', type: 'string' }, observed_at: { sql: 'observed_at', type: 'time' }, bucket_start_utc: { sql: 'bucket_start_utc', type: 'string' } },\n  measures: { amount: { sql: 'amount', type: 'sum' } }\n});",
+  "setupSQL": "CREATE SCHEMA cssql_oracle;\nCREATE TABLE cssql_oracle.analytics_calendar_alignment (\n  id integer PRIMARY KEY, tenant text NOT NULL, lane text NOT NULL, observed_at timestamptz NOT NULL, amount numeric NOT NULL);\n  INSERT INTO cssql_oracle.analytics_calendar_alignment VALUES\n    (1,'A','months','2024-01-01T12:00:00Z',10),(2,'A','months','2024-02-01T12:00:00Z',20),(3,'A','months','2024-03-01T12:00:00Z',40),\n    (4,'B','months','2024-02-01T12:00:00Z',20000),\n    (5,'A','leap','2023-02-28T12:00:00Z',20),(6,'A','leap','2024-02-29T12:00:00Z',40),(7,'B','leap','2023-02-28T12:00:00Z',9000),\n    (8,'A','reporting','2024-01-01T12:00:00Z',10),(9,'A','reporting','2024-03-01T12:00:00Z',40),(10,'B','reporting','2024-01-01T12:00:00Z',9000),\n    (11,'A','dst','2024-03-10T04:59:59Z',1),(12,'A','dst','2024-03-10T05:00:00Z',2),\n    (13,'A','dst','2024-03-11T03:59:59Z',4),(14,'A','dst','2024-03-11T04:00:00Z',8),(15,'B','dst','2024-03-10T05:00:00Z',9000);\n  CREATE TABLE cssql_oracle.analytics_calendar_mapping (calendar_key text NOT NULL, version integer NOT NULL, current_day date NOT NULL, prior_day date NOT NULL,\n    PRIMARY KEY(calendar_key, version, current_day));\n  INSERT INTO cssql_oracle.analytics_calendar_mapping VALUES ('leap',1,'2024-02-29','2023-02-28'),('reporting',1,'2024-03-01','2024-01-01');",
+  "cases": [
+    {
+      "id": "MC13-COMPOSED-MONTHS",
+      "query": "WITH base AS (\nSELECT\n  DATE_TRUNC('month', analytics_calendar_months.observed_at) AS \"analytics_calendar_months.observed_at\", MEASURE(analytics_calendar_months.amount) AS \"current\"\n  FROM analytics_calendar_months\n  WHERE (analytics_calendar_months.observed_at >= '2024-01-01' AND analytics_calendar_months.observed_at <= '2024-03-31')\n  GROUP BY 1\n),\ncalendar_keys AS (\nSELECT\n  base.\"analytics_calendar_months.observed_at\" AS \"analytics_calendar_months.observed_at\", base.\"current\" AS \"current\", DATE_ADD(base.\"analytics_calendar_months.observed_at\", INTERVAL '-1 month') AS \"__calendar_1\"\n  FROM base\n),\ncompared AS (\nSELECT\n  t.\"analytics_calendar_months.observed_at\" AS \"analytics_calendar_months.observed_at\", t.\"current\" AS \"current\", cmp_1.\"current\" AS \"prior\"\n  FROM calendar_keys t LEFT JOIN calendar_keys cmp_1 ON cmp_1.\"analytics_calendar_months.observed_at\" = t.\"__calendar_1\"\n),\ncalendar_keys_2 AS (\nSELECT\n  compared.\"analytics_calendar_months.observed_at\" AS \"analytics_calendar_months.observed_at\", compared.\"current\" AS \"current\", compared.\"prior\" AS \"prior\", DATE_ADD(compared.\"analytics_calendar_months.observed_at\", INTERVAL '-1 month') AS \"__calendar_1\"\n  FROM compared\n),\ncompared_2 AS (\nSELECT\n  t.\"analytics_calendar_months.observed_at\" AS \"analytics_calendar_months.observed_at\", t.\"current\" AS \"current\", t.\"prior\" AS \"prior\", cmp_1.\"prior\" AS \"prior_twice\"\n  FROM calendar_keys_2 t LEFT JOIN calendar_keys_2 cmp_1 ON cmp_1.\"analytics_calendar_months.observed_at\" = t.\"__calendar_1\"\n  WHERE (t.\"analytics_calendar_months.observed_at\" >= '2024-03-01' AND t.\"analytics_calendar_months.observed_at\" <= '2024-03-31')\n)\nSELECT\n  compared_2.\"analytics_calendar_months.observed_at\" AS \"analytics_calendar_months.observed_at\", compared_2.\"current\" AS \"current\", compared_2.\"prior\" AS \"prior\", compared_2.\"prior_twice\" AS \"prior_twice\", ((CAST((compared_2.\"current\" - compared_2.\"prior_twice\") AS DOUBLE PRECISION)) / NULLIF(compared_2.\"prior_twice\", 0)) AS \"growth\"\n  FROM compared_2\n  ORDER BY \"analytics_calendar_months.observed_at\"\n  LIMIT 10",
+      "oracle": "-- oracle:mc13_composed_months_truth\nWITH truth AS (SELECT DATE '2024-03-01' AS bucket,\n    (SELECT SUM(amount) FROM cssql_oracle.analytics_calendar_alignment WHERE tenant='A' AND lane='months' AND observed_at >= TIMESTAMPTZ '2024-03-01T00:00:00Z' AND observed_at < TIMESTAMPTZ '2024-04-01T00:00:00Z') AS current,\n    (SELECT SUM(amount) FROM cssql_oracle.analytics_calendar_alignment WHERE tenant='A' AND lane='months' AND observed_at >= TIMESTAMPTZ '2024-02-01T00:00:00Z' AND observed_at < TIMESTAMPTZ '2024-03-01T00:00:00Z') AS prior,\n    (SELECT SUM(amount) FROM cssql_oracle.analytics_calendar_alignment WHERE tenant='A' AND lane='months' AND observed_at >= TIMESTAMPTZ '2024-01-01T00:00:00Z' AND observed_at < TIMESTAMPTZ '2024-02-01T00:00:00Z') AS prior_twice) SELECT bucket,current,prior,prior_twice,(current-prior_twice)/prior_twice AS growth FROM truth;",
+      "mutantOracle": "-- oracle:mc13_composed_months_mutant\nWITH truth AS (SELECT DATE '2024-03-01' AS bucket,\n    (SELECT SUM(amount) FROM cssql_oracle.analytics_calendar_alignment WHERE tenant='A' AND lane='months' AND observed_at >= TIMESTAMPTZ '2024-03-01T00:00:00Z' AND observed_at < TIMESTAMPTZ '2024-04-01T00:00:00Z') AS current,\n    (SELECT SUM(amount) FROM cssql_oracle.analytics_calendar_alignment WHERE tenant='A' AND lane='months' AND observed_at >= TIMESTAMPTZ '2024-02-01T00:00:00Z' AND observed_at < TIMESTAMPTZ '2024-03-01T00:00:00Z') AS prior,\n    (SELECT SUM(amount) FROM cssql_oracle.analytics_calendar_alignment WHERE tenant='A' AND lane='months' AND observed_at >= TIMESTAMPTZ '2024-01-01T00:00:00Z' AND observed_at < TIMESTAMPTZ '2024-02-01T00:00:00Z') AS prior_twice) SELECT bucket,current,prior,prior AS prior_twice,(current-prior)/prior AS growth FROM truth;",
+      "expected": [
+        [
+          "2024-03-01",
+          40,
+          20,
+          10,
+          3
+        ]
+      ],
+      "document": {
+        "version": 3,
+        "scope": {
+          "kind": "data_source",
+          "id": "mc13-calendar-fixture"
+        },
+        "body": {
+          "kind": "structured",
+          "base": {
+            "timezone": "UTC",
+            "timeDimensions": [
+              {
+                "dimension": "analytics_calendar_months.observed_at",
+                "granularity": "month",
+                "dateRange": [
+                  "2024-03-01",
+                  "2024-03-31"
+                ]
+              }
+            ],
+            "measures": [
+              {
+                "kind": "member",
+                "id": "current",
+                "path": "analytics_calendar_months.amount",
+                "aggregation": "sum"
+              },
+              {
+                "kind": "time",
+                "id": "prior",
+                "input": "current",
+                "op": "prior",
+                "offset": {
+                  "n": 1,
+                  "unit": "month"
+                }
+              },
+              {
+                "kind": "time",
+                "id": "prior_twice",
+                "input": "prior",
+                "op": "prior",
+                "offset": {
+                  "n": 1,
+                  "unit": "month"
+                }
+              },
+              {
+                "kind": "derived",
+                "id": "growth",
+                "expr": {
+                  "t": "safeDiv",
+                  "num": {
+                    "t": "bin",
+                    "op": "-",
+                    "left": {
+                      "t": "ref",
+                      "id": "current"
+                    },
+                    "right": {
+                      "t": "ref",
+                      "id": "prior_twice"
+                    }
+                  },
+                  "den": {
+                    "t": "ref",
+                    "id": "prior_twice"
+                  }
+                }
+              }
+            ],
+            "resultOps": {
+              "sort": [
+                {
+                  "id": "analytics_calendar_months.observed_at"
+                }
+              ]
+            },
+            "limit": 10
+          }
+        }
+      },
+      "normalizedIr": {
+        "joinPlan": {
+          "intent": "cube_graph",
+          "root": "analytics_calendar_months",
+          "source": "inferred",
+          "joins": []
+        },
+        "members": [
+          {
+            "source": "timeDimension",
+            "dimension": "analytics_calendar_months.observed_at",
+            "granularity": "month"
+          },
+          {
+            "source": "measure",
+            "ref": "current"
+          },
+          {
+            "source": "measure",
+            "ref": "prior"
+          },
+          {
+            "source": "measure",
+            "ref": "prior_twice"
+          },
+          {
+            "source": "measure",
+            "ref": "growth"
+          }
+        ],
+        "calculations": {
+          "current": {
+            "kind": "member",
+            "id": "current",
+            "path": "analytics_calendar_months.amount",
+            "aggregation": "sum"
+          },
+          "prior": {
+            "kind": "time",
+            "id": "prior",
+            "input": "current",
+            "op": "prior",
+            "offset": {
+              "n": 1,
+              "unit": "month"
+            }
+          },
+          "prior_twice": {
+            "kind": "time",
+            "id": "prior_twice",
+            "input": "prior",
+            "op": "prior",
+            "offset": {
+              "n": 1,
+              "unit": "month"
+            }
+          },
+          "growth": {
+            "kind": "derived",
+            "id": "growth",
+            "expr": {
+              "t": "safeDiv",
+              "num": {
+                "t": "bin",
+                "op": "-",
+                "left": {
+                  "t": "ref",
+                  "id": "current"
+                },
+                "right": {
+                  "t": "ref",
+                  "id": "prior_twice"
+                }
+              },
+              "den": {
+                "t": "ref",
+                "id": "prior_twice"
+              }
+            }
+          }
+        },
+        "timeDimensions": [
+          {
+            "dimension": "analytics_calendar_months.observed_at",
+            "granularity": "month",
+            "dateRange": [
+              "2024-03-01",
+              "2024-03-31"
+            ],
+            "dateRangeSource": [
+              "2024-03-01",
+              "2024-03-31"
+            ],
+            "mode": "snapshot",
+            "bounds": "[]"
+          }
+        ],
+        "filters": [],
+        "aggregateFilters": [],
+        "inlineWhere": [],
+        "inlineHaving": [],
+        "inlineResult": [],
+        "segments": [],
+        "resultOps": {
+          "sort": [
+            {
+              "id": "analytics_calendar_months.observed_at"
+            }
+          ]
+        },
+        "order": [],
+        "limit": 10,
+        "timezone": "UTC",
+        "kinds": {
+          "analytics_calendar_months.observed_at": "timeDimension",
+          "analytics_calendar_months.amount": "measure"
+        }
+      },
+      "pinnedActualRows": [
+        {
+          "analytics_calendar_months.observed_at": "2024-02-29T13:00:00.000Z",
+          "current": 40,
+          "prior": 40,
+          "prior_twice": 20,
+          "growth": 1
+        }
+      ]
+    },
+    {
+      "id": "MC13-SPARSE-COMPOSED-MONTHS",
+      "query": "WITH base AS (\nSELECT\n  DATE_TRUNC('month', analytics_calendar_months.observed_at) AS \"analytics_calendar_months.observed_at\", MEASURE(analytics_calendar_months.amount) AS \"current\"\n  FROM analytics_calendar_months\n  WHERE (analytics_calendar_months.observed_at >= '2024-01-01' AND analytics_calendar_months.observed_at <= '2024-03-31') AND (analytics_calendar_months.id != '2' OR analytics_calendar_months.id IS NULL)\n  GROUP BY 1\n),\ncalendar_keys AS (\nSELECT\n  base.\"analytics_calendar_months.observed_at\" AS \"analytics_calendar_months.observed_at\", base.\"current\" AS \"current\", DATE_ADD(base.\"analytics_calendar_months.observed_at\", INTERVAL '-1 month') AS \"__calendar_1\"\n  FROM base\n),\ncompared AS (\nSELECT\n  t.\"analytics_calendar_months.observed_at\" AS \"analytics_calendar_months.observed_at\", t.\"current\" AS \"current\", cmp_1.\"current\" AS \"prior\"\n  FROM calendar_keys t LEFT JOIN calendar_keys cmp_1 ON cmp_1.\"analytics_calendar_months.observed_at\" = t.\"__calendar_1\"\n),\ncalendar_keys_2 AS (\nSELECT\n  compared.\"analytics_calendar_months.observed_at\" AS \"analytics_calendar_months.observed_at\", compared.\"current\" AS \"current\", compared.\"prior\" AS \"prior\", DATE_ADD(compared.\"analytics_calendar_months.observed_at\", INTERVAL '-1 month') AS \"__calendar_1\"\n  FROM compared\n),\ncompared_2 AS (\nSELECT\n  t.\"analytics_calendar_months.observed_at\" AS \"analytics_calendar_months.observed_at\", t.\"current\" AS \"current\", t.\"prior\" AS \"prior\", cmp_1.\"prior\" AS \"prior_twice\"\n  FROM calendar_keys_2 t LEFT JOIN calendar_keys_2 cmp_1 ON cmp_1.\"analytics_calendar_months.observed_at\" = t.\"__calendar_1\"\n  WHERE (t.\"analytics_calendar_months.observed_at\" >= '2024-03-01' AND t.\"analytics_calendar_months.observed_at\" <= '2024-03-31')\n)\nSELECT\n  compared_2.\"analytics_calendar_months.observed_at\" AS \"analytics_calendar_months.observed_at\", compared_2.\"current\" AS \"current\", compared_2.\"prior\" AS \"prior\", compared_2.\"prior_twice\" AS \"prior_twice\", ((CAST((compared_2.\"current\" - compared_2.\"prior_twice\") AS DOUBLE PRECISION)) / NULLIF(compared_2.\"prior_twice\", 0)) AS \"growth\"\n  FROM compared_2\n  ORDER BY \"analytics_calendar_months.observed_at\"\n  LIMIT 10",
+      "oracle": "-- oracle:mc13_sparse_composed_months_truth\nWITH monthly AS (SELECT date_trunc('month',observed_at AT TIME ZONE 'UTC') AS month,SUM(amount) AS current FROM cssql_oracle.analytics_calendar_alignment WHERE tenant='A' AND lane='months' AND id<>2 GROUP BY 1), first_prior AS (SELECT c.month,c.current,p.current AS prior FROM monthly c LEFT JOIN monthly p ON p.month=c.month-INTERVAL '1 month') SELECT c.month AS bucket,c.current,c.prior,p.prior AS prior_twice,(c.current-p.prior)/NULLIF(p.prior,0) AS growth FROM first_prior c LEFT JOIN first_prior p ON p.month=c.month-INTERVAL '1 month' WHERE c.month=TIMESTAMP '2024-03-01';",
+      "mutantOracle": "-- oracle:mc13_sparse_composed_months_mutant\nWITH monthly AS (SELECT date_trunc('month',observed_at AT TIME ZONE 'UTC') AS month,SUM(amount) AS current FROM cssql_oracle.analytics_calendar_alignment WHERE tenant='A' AND lane='months' AND id<>2 GROUP BY 1), first_prior AS (SELECT c.month,c.current,p.current AS prior FROM monthly c LEFT JOIN monthly p ON p.month=c.month-INTERVAL '1 month') SELECT c.month AS bucket,c.current,c.prior,p.current AS prior_twice,(c.current-p.current)/NULLIF(p.current,0) AS growth FROM first_prior c LEFT JOIN monthly p ON p.month=c.month-INTERVAL '2 months' WHERE c.month=TIMESTAMP '2024-03-01';",
+      "expected": [
+        [
+          "2024-03-01",
+          40,
+          null,
+          null,
+          null
+        ]
+      ],
+      "document": {
+        "version": 3,
+        "scope": {
+          "kind": "data_source",
+          "id": "mc13-calendar-fixture"
+        },
+        "body": {
+          "kind": "structured",
+          "base": {
+            "timezone": "UTC",
+            "timeDimensions": [
+              {
+                "dimension": "analytics_calendar_months.observed_at",
+                "granularity": "month",
+                "dateRange": [
+                  "2024-03-01",
+                  "2024-03-31"
+                ]
+              }
+            ],
+            "measures": [
+              {
+                "kind": "member",
+                "id": "current",
+                "path": "analytics_calendar_months.amount",
+                "aggregation": "sum"
+              },
+              {
+                "kind": "time",
+                "id": "prior",
+                "input": "current",
+                "op": "prior",
+                "offset": {
+                  "n": 1,
+                  "unit": "month"
+                }
+              },
+              {
+                "kind": "time",
+                "id": "prior_twice",
+                "input": "prior",
+                "op": "prior",
+                "offset": {
+                  "n": 1,
+                  "unit": "month"
+                }
+              },
+              {
+                "kind": "derived",
+                "id": "growth",
+                "expr": {
+                  "t": "safeDiv",
+                  "num": {
+                    "t": "bin",
+                    "op": "-",
+                    "left": {
+                      "t": "ref",
+                      "id": "current"
+                    },
+                    "right": {
+                      "t": "ref",
+                      "id": "prior_twice"
+                    }
+                  },
+                  "den": {
+                    "t": "ref",
+                    "id": "prior_twice"
+                  }
+                }
+              }
+            ],
+            "resultOps": {
+              "sort": [
+                {
+                  "id": "analytics_calendar_months.observed_at"
+                }
+              ]
+            },
+            "limit": 10,
+            "filters": [
+              {
+                "member": "analytics_calendar_months.id",
+                "operator": "notEquals",
+                "values": [
+                  "2"
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "normalizedIr": {
+        "joinPlan": {
+          "intent": "cube_graph",
+          "root": "analytics_calendar_months",
+          "source": "inferred",
+          "joins": []
+        },
+        "members": [
+          {
+            "source": "timeDimension",
+            "dimension": "analytics_calendar_months.observed_at",
+            "granularity": "month"
+          },
+          {
+            "source": "measure",
+            "ref": "current"
+          },
+          {
+            "source": "measure",
+            "ref": "prior"
+          },
+          {
+            "source": "measure",
+            "ref": "prior_twice"
+          },
+          {
+            "source": "measure",
+            "ref": "growth"
+          }
+        ],
+        "calculations": {
+          "current": {
+            "kind": "member",
+            "id": "current",
+            "path": "analytics_calendar_months.amount",
+            "aggregation": "sum"
+          },
+          "prior": {
+            "kind": "time",
+            "id": "prior",
+            "input": "current",
+            "op": "prior",
+            "offset": {
+              "n": 1,
+              "unit": "month"
+            }
+          },
+          "prior_twice": {
+            "kind": "time",
+            "id": "prior_twice",
+            "input": "prior",
+            "op": "prior",
+            "offset": {
+              "n": 1,
+              "unit": "month"
+            }
+          },
+          "growth": {
+            "kind": "derived",
+            "id": "growth",
+            "expr": {
+              "t": "safeDiv",
+              "num": {
+                "t": "bin",
+                "op": "-",
+                "left": {
+                  "t": "ref",
+                  "id": "current"
+                },
+                "right": {
+                  "t": "ref",
+                  "id": "prior_twice"
+                }
+              },
+              "den": {
+                "t": "ref",
+                "id": "prior_twice"
+              }
+            }
+          }
+        },
+        "timeDimensions": [
+          {
+            "dimension": "analytics_calendar_months.observed_at",
+            "granularity": "month",
+            "dateRange": [
+              "2024-03-01",
+              "2024-03-31"
+            ],
+            "dateRangeSource": [
+              "2024-03-01",
+              "2024-03-31"
+            ],
+            "mode": "snapshot",
+            "bounds": "[]"
+          }
+        ],
+        "filters": [
+          {
+            "member": "analytics_calendar_months.id",
+            "operator": "notEquals",
+            "values": [
+              "2"
+            ]
+          }
+        ],
+        "aggregateFilters": [],
+        "inlineWhere": [],
+        "inlineHaving": [],
+        "inlineResult": [],
+        "segments": [],
+        "resultOps": {
+          "sort": [
+            {
+              "id": "analytics_calendar_months.observed_at"
+            }
+          ]
+        },
+        "order": [],
+        "limit": 10,
+        "timezone": "UTC",
+        "kinds": {
+          "analytics_calendar_months.observed_at": "timeDimension",
+          "analytics_calendar_months.id": "dimension",
+          "analytics_calendar_months.amount": "measure"
+        }
+      },
+      "pinnedActualRows": [
+        {
+          "analytics_calendar_months.observed_at": "2024-02-29T13:00:00.000Z",
+          "current": 40,
+          "prior": 40,
+          "prior_twice": null,
+          "growth": null
+        }
+      ]
+    }
+  ],
+  "evidenceBoundary": "Actual original-edge QueryRails SQL from negative pinned Cube 1.7.42 captures. Private combined native addon and fixture DuckDB source/auth only; no immutable release, production grant/cache, other-driver or resource qualification."
+}

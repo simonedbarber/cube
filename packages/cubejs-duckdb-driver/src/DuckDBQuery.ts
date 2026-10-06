@@ -83,6 +83,14 @@ export class DuckDBQuery extends BaseQuery {
     // `//` is integer division truncating toward zero (-7 // 2 = -3), matching
     // PostgreSQL
     templates.expressions.int_division = '({{ left }} // {{ right }})';
+    // Alias the table-function column explicitly. DuckDB's default column is
+    // generate_series; Tesseract supplies date_from/date_to expressions over d.
+    templates.statements.generated_time_series_select = 'SELECT {{ date_from }} AS "date_from",\n' +
+      '{{ date_to }} AS "date_to"\n' +
+      'FROM generate_series(CAST({{ start }} AS TIMESTAMP), CAST({{ end }} AS TIMESTAMP), CAST({{ granularity }} AS INTERVAL)) AS series(d)';
+    templates.statements.generated_time_series_with_cte_range_source = 'SELECT d AS "date_from",\n' +
+      'd + CAST({{ granularity }} AS INTERVAL) - INTERVAL \'1 millisecond\' AS "date_to"\n' +
+      'FROM {{ range_source }}, LATERAL generate_series(CAST({{ range_source }}.{{ min_name }} AS TIMESTAMP), CAST({{ range_source }}.{{ max_name }} AS TIMESTAMP), CAST({{ granularity }} AS INTERVAL)) AS series(d)';
     return templates;
   }
 

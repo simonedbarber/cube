@@ -22,6 +22,7 @@ use super::filter::compiler::FilterCompiler;
 use super::filter::{BaseSegment, FilterItem};
 use super::join_hints::JoinHints;
 use super::query_properties::{OrderByItem, QueryProperties};
+use super::row_level_filters::RowLevelFilters;
 use super::state::State;
 use super::symbols::transforms::patch_measure;
 use super::{
@@ -61,6 +62,15 @@ impl QueryPropertiesCompiler {
                 &time_dimensions_raw,
                 &measures,
             )?;
+
+        let protected_filters = RowLevelFilters::compile(
+            options.static_data().row_level_filters.as_deref(),
+            &mut evaluator_compiler,
+            self.query_tools.query_tools().clone(),
+        )?;
+        self.query_tools
+            .query_tools()
+            .set_row_level_filters(protected_filters);
 
         // FIXME may be this filter should be applied on other place
         let time_dimensions = Self::filter_time_dimensions_with_granularity(time_dimensions_raw);
@@ -607,7 +617,7 @@ impl QueryPropertiesCompiler {
                 } else {
                     evaluator_compiler.add_auto_resolved_member_evaluator(o.id.clone())?
                 };
-                Ok(OrderByItem::new(evaluator, o.is_desc()))
+                Ok(OrderByItem::new(evaluator, o.is_desc()).with_nulls_first(o.nulls_first))
             })
             .collect::<Result<Vec<_>, _>>()?;
         Ok(Some(translated))

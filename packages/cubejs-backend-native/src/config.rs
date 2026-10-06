@@ -6,6 +6,7 @@ use crate::{auth::NodeBridgeAuthService, transport::NodeBridgeTransport};
 use async_trait::async_trait;
 use cubesql::config::injection::Injector;
 use cubesql::config::processing_loop::ShutdownMode;
+use cubesql::sql::compiler_cache::CompilerCache;
 use cubesql::{
     config::{Config, CubeServices},
     sql::SqlAuthService,
@@ -13,17 +14,22 @@ use cubesql::{
     CubeError,
 };
 use std::sync::Arc;
+use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 
 pub type LoopHandle = JoinHandle<Result<(), CubeError>>;
 
 pub struct NodeCubeServices {
     pub services: CubeServices,
+    shutdown_join: Mutex<()>,
 }
 
 impl NodeCubeServices {
     pub fn new(services: CubeServices) -> Self {
-        Self { services }
+        Self {
+            services,
+            shutdown_join: Mutex::new(()),
+        }
     }
 
     pub fn injector(&self) -> &Arc<Injector> {
@@ -82,6 +88,9 @@ impl NodeCubeServices {
     }
 
     pub async fn await_processing_loops(&self) -> Result<(), CubeError> {
+        // Multiple shutdown callers may escalate the stop signal, but each
+        // must wait for the same listener join and cache disposal boundary.
+        let _join = self.shutdown_join.lock().await;
         let mut handles = Vec::new();
 
         {
@@ -91,6 +100,16 @@ impl NodeCubeServices {
 
         for h in handles {
             let _ = h.await;
+        }
+
+        // Cached CubeEGraphs retain CubeContext -> SessionManager -> ServerManager
+        // -> CompilerCache. Joining listeners alone cannot break that cycle.
+        if let Some(cache) = self
+            .injector()
+            .try_get_service_typed::<dyn CompilerCache>()
+            .await
+        {
+            cache.clear().await;
         }
 
         Ok(())

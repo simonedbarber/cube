@@ -1,5 +1,6 @@
 /* eslint-disable no-restricted-syntax */
 import * as stream from 'stream';
+import { withSqlOrderNullsFirst } from './sql-order';
 import { assertNever } from 'assert-never';
 import jwt, { Algorithm as JWTAlgorithm } from 'jsonwebtoken';
 import R from 'ramda';
@@ -1458,6 +1459,9 @@ class ApiGateway {
       if ((currentQuery as any).maskedMembers) {
         throw new UserError('maskedMembers cannot be provided in the query');
       }
+      if ((currentQuery as NormalizedQuery).rowLevelFilters != null) {
+        throw new UserError('rowLevelFilters cannot be provided in the query');
+      }
 
       return {
         normalizedQuery: (normalizeQuery(currentQuery, persistent, cacheMode)),
@@ -1489,6 +1493,7 @@ class ApiGateway {
           ) : queryWithRlsFilters;
 
           rewrittenQuery.maskedMembers = queryWithRlsFilters.maskedMembers;
+          rewrittenQuery.rowLevelFilters = queryWithRlsFilters.rowLevelFilters;
 
           // applyRowLevelSecurity may add new filters which may contain raw member expressions
           // if that's the case, we should run an extra pass of parsing here to make sure
@@ -1554,6 +1559,7 @@ class ApiGateway {
   }
 
   public async sql({
+    sqlOrderNullsFirst,
     query,
     context,
     res,
@@ -1574,7 +1580,7 @@ class ApiGateway {
 
       const sqlQueries = await Promise.all<any>(
         normalizedQueries.map(async (normalizedQuery) => (await this.getCompilerApi(context)).getSql(
-          this.coerceForSqlQuery({ ...normalizedQuery, memberToAlias, expressionParams, disableExternalPreAggregations }, context),
+          this.coerceForSqlQuery({ ...withSqlOrderNullsFirst(normalizedQuery, sqlOrderNullsFirst, query), memberToAlias, expressionParams, disableExternalPreAggregations }, context),
           {
             includeDebugInfo: getEnv('devMode') || context.signedWithPlaygroundAuthSecret,
             exportAnnotatedSql,
@@ -1856,6 +1862,8 @@ class ApiGateway {
   private async getSqlQueriesInternal(
     context: RequestContext,
     normalizedQueries: (NormalizedQuery)[],
+    sqlOrderNullsFirst?: boolean[],
+    sourceQuery?: unknown,
   ): Promise<Array<any>> {
     const sqlQueries = await Promise.all(
       normalizedQueries.map(
@@ -1863,7 +1871,7 @@ class ApiGateway {
           const loadRequestSQLStarted = new Date();
           const sqlQueryRaw = await (await this.getCompilerApi(context))
             .getSql(
-              this.coerceForSqlQuery(normalizedQuery, context)
+              this.coerceForSqlQuery(withSqlOrderNullsFirst(normalizedQuery, sqlOrderNullsFirst, sourceQuery), context)
             );
           const sqlQuery = this.sanitizeSqlQuery(sqlQueryRaw);
 
@@ -2255,7 +2263,9 @@ class ApiGateway {
       const sqlQueries = await this
         .getSqlQueriesInternal(
           context,
-          normalizedQueries.map(q => ({ ...q, disableExternalPreAggregations: request.sqlQuery }))
+          normalizedQueries.map(q => ({ ...q, disableExternalPreAggregations: request.sqlQuery })),
+          request.sqlOrderNullsFirst,
+          request.query
         );
 
       let results: any[];

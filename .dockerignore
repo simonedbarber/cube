@@ -19,8 +19,9 @@ packages/cubejs-backend-native/native/
 # Caches
 rust/**/target/
 packages/cubejs-backend-native/target
-packages/*/node_modules/
-packages/*/dist/
-packages/*/coverage/
+packages/**/node_modules/
+packages/**/dist/
+packages/**/coverage/
+**/*.tsbuildinfo
 # Other
 packages/cubejs-server-core/playground/

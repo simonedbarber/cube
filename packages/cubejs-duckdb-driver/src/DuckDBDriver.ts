@@ -213,7 +213,7 @@ export class DuckDBDriver extends BaseDriver implements DriverInterface {
       // initSql never triggers a (network-bound) extension install.
       if (/\bducklake\b/i.test(this.config.initSql)) {
         try {
-          await execAsync('INSTALL ducklake; INSTALL postgres; INSTALL httpfs;');
+          await execAsync('INSTALL ducklake; INSTALL postgres; INSTALL httpfs; INSTALL spatial;');
         } catch (e) {
           if (this.logger) {
             console.error('DuckDB - error installing lake extensions', { e });
@@ -227,6 +227,8 @@ export class DuckDBDriver extends BaseDriver implements DriverInterface {
       // the lake un-attached and surfaces later as a misleading
       // "Table does not exist".
       try {
+        // Spatial is a lake-session dependency, not a geometry eligibility proof.
+        if (/\bducklake\b/i.test(this.config.initSql)) await execAsync('LOAD spatial;');
         await execAsync(this.config.initSql);
       } catch (e) {
         if (this.logger) {

@@ -127,6 +127,7 @@ impl Select {
                     &itm.expr.to_sql(templates, self.context.clone())?,
                     Some(itm.pos),
                     !itm.desc,
+                    itm.nulls_first,
                 )?;
                 Ok(TemplateOrderByColumn { expr })
             })

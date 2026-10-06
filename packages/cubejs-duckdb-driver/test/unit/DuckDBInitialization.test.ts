@@ -86,7 +86,7 @@ describe('DuckDBDriver initialization', () => {
     expect(instance.closeSync).toHaveBeenCalledTimes(1);
   });
 
-  // QueryRails: a DuckLake initSql INSTALLs ducklake/postgres/httpfs first, because
+  // QueryRails: a DuckLake initSql INSTALLs ducklake/postgres/httpfs/spatial first, because
   // the lake initSql only LOADs them and a cold extension cache would fail.
   test('installs the lake extensions before a ducklake initSql', async () => {
     driver = new TestDuckDBDriver({ initSql: "ATTACH 'ducklake:postgres:...' AS lake;" });
@@ -94,7 +94,8 @@ describe('DuckDBDriver initialization', () => {
     await driver.initialize();
 
     expect(connection.run.mock.calls.map(([sql]) => sql)).toEqual([
-      'INSTALL ducklake; INSTALL postgres; INSTALL httpfs;',
+      'INSTALL ducklake; INSTALL postgres; INSTALL httpfs; INSTALL spatial;',
+      'LOAD spatial;',
       "ATTACH 'ducklake:postgres:...' AS lake;",
     ]);
   });
@@ -110,6 +111,20 @@ describe('DuckDBDriver initialization', () => {
     await expect(driver.initialize()).rejects.toThrow('no network');
     expect(connection.run).not.toHaveBeenCalledWith("ATTACH 'ducklake:postgres:...' AS lake;");
     expect(instance.closeSync).toHaveBeenCalledTimes(1);
+  });
+
+  test('fails before attaching when spatial LOAD errors and closes resources', async () => {
+    const initSql = "ATTACH 'ducklake:postgres:...' AS lake;";
+    driver = new TestDuckDBDriver({ initSql });
+    connection.run.mockImplementation(async (sql: string) => {
+      if (sql === 'LOAD spatial;') throw new Error('spatial unavailable');
+    });
+
+    await expect(driver.initialize()).rejects.toThrow('spatial unavailable');
+    expect(connection.run).not.toHaveBeenCalledWith(initSql);
+    expect(connection.closeSync).toHaveBeenCalledTimes(1);
+    expect(instance.closeSync).toHaveBeenCalledTimes(1);
+    expect(connection.closeSync.mock.invocationCallOrder[0]).toBeLessThan(instance.closeSync.mock.invocationCallOrder[0]);
   });
 
   test.each(['INSTALL json', 'LOAD json', "CREATE SECRET (TYPE S3, PROVIDER 'CREDENTIAL_CHAIN')"])(

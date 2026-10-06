@@ -2,7 +2,7 @@ use datafusion::{arrow::datatypes::DataType, logical_plan::Column};
 use std::{collections::HashMap, ops::RangeFrom, sync::Arc};
 use uuid::Uuid;
 
-use crate::{sql::ColumnType, transport::SqlGenerator};
+use crate::{sql::ColumnType, transport::SqlGenerator, CubeError};
 
 use super::{CubeMeta, CubeMetaDimension, CubeMetaMeasure, V1CubeMetaExt};
 
@@ -99,7 +99,25 @@ impl MetaContext {
         member_to_data_source: HashMap<String, String>,
         data_source_to_sql_generator: HashMap<String, Arc<dyn SqlGenerator + Send + Sync>>,
         compiler_id: Uuid,
-    ) -> Self {
+    ) -> Result<Self, CubeError> {
+        // Reject invalid declarations before get_columns/df_data_type can consume
+        // the metadata. A malformed exact type must never fall back to Float64.
+        for cube in &cubes {
+            for measure in &cube.measures {
+                super::ext::numeric_result_type(
+                    &measure.name,
+                    &measure.r#type,
+                    measure.meta.as_ref(),
+                )?;
+            }
+            for dimension in &cube.dimensions {
+                super::ext::numeric_result_type(
+                    &dimension.name,
+                    &dimension.r#type,
+                    dimension.meta.as_ref(),
+                )?;
+            }
+        }
         // 18000 - max system table oid
         let mut oid_iter: RangeFrom<u32> = 18000..;
         let tables: Vec<CubeMetaTable> = cubes
@@ -124,14 +142,14 @@ impl MetaContext {
             })
             .collect();
 
-        Self {
+        Ok(Self {
             cubes,
             tables,
             member_to_data_source,
             data_source_to_sql_generator,
             compiler_id,
             created_at: chrono::Utc::now(),
-        }
+        })
     }
 
     pub fn data_source_for_member_name(
@@ -390,7 +408,7 @@ mod tests {
 
         // TODO
         let test_context =
-            MetaContext::new(test_cubes, HashMap::new(), HashMap::new(), Uuid::new_v4());
+            MetaContext::new(test_cubes, HashMap::new(), HashMap::new(), Uuid::new_v4()).unwrap();
 
         match test_context.find_cube_table_with_oid(18000) {
             Some(table) => assert_eq!(18000, table.oid),
@@ -435,6 +453,7 @@ mod tests {
             HashMap::new(),
             Uuid::new_v4(),
         )
+        .unwrap()
     }
 
     #[test]
@@ -503,7 +522,8 @@ mod tests {
             ]),
             HashMap::new(),
             Uuid::new_v4(),
-        );
+        )
+        .unwrap();
 
         assert!(matches!(
             ctx.data_source_for_cube_name("everything"),
@@ -528,7 +548,8 @@ mod tests {
             ]),
             HashMap::new(),
             Uuid::new_v4(),
-        );
+        )
+        .unwrap();
 
         assert_eq!(
             ctx.data_sources_for_member_names(vec![
@@ -564,7 +585,8 @@ mod tests {
             ]),
             HashMap::new(),
             Uuid::new_v4(),
-        );
+        )
+        .unwrap();
 
         let err = ctx
             .data_source_for_cube_names(vec!["orders", "visits"])

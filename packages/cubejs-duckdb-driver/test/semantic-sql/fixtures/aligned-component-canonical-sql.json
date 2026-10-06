@@ -1,0 +1,995 @@
+{
+  "evidenceBoundary": "Canonical development SQL emitted by QueryRails revision 3 at K=50000. These frozen regression inputs are not runtime admission or a production row-limit setting.",
+  "cases": [
+    {
+      "id": "TUPLES",
+      "query": "WITH base AS (\nSELECT\n  analytics_key_domain.region AS \"analytics_key_domain.region\", DATE_TRUNC('month', analytics_key_domain.created_at) AS \"analytics_key_domain.created_at\", SUM(analytics_key_domain.amount) AS \"amount\"\n  FROM analytics_key_domain\n  WHERE (analytics_key_domain.created_at >= '2024-03-01' AND analytics_key_domain.created_at <= '2024-04-30') AND analytics_key_domain.status = 'current'\n  GROUP BY 1, 2\n),\nscope AS (\nSELECT\n  analytics_key_domain.region AS \"analytics_key_domain.region\", DATE_TRUNC('month', analytics_key_domain.created_at) AS \"analytics_key_domain.created_at\", SUM(analytics_key_domain.amount) AS \"other\"\n  FROM analytics_key_domain\n  WHERE (analytics_key_domain.created_at >= '2024-03-01' AND analytics_key_domain.created_at <= '2024-04-30') AND analytics_key_domain.status = 'other'\n  GROUP BY 1, 2\n),\nscope_2 AS (\nSELECT\n  analytics_key_domain.region AS \"analytics_key_domain.region\", DATE_TRUNC('month', analytics_key_domain.created_at) AS \"analytics_key_domain.created_at\", SUM(analytics_key_domain.amount) AS \"third\"\n  FROM analytics_key_domain\n  WHERE (analytics_key_domain.created_at >= '2024-03-01' AND analytics_key_domain.created_at <= '2024-04-30') AND analytics_key_domain.status = 'third'\n  GROUP BY 1, 2\n),\ncomponent_domain AS (\nSELECT base.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", base.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\" FROM base\nUNION\nSELECT scope.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", scope.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\" FROM scope\n),\njoin_keys AS (\nSELECT\n  component_domain.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", component_domain.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\", COALESCE(CAST(component_domain.\"analytics_key_domain.region\" AS VARCHAR), '') AS \"__join_value_0\", (component_domain.\"analytics_key_domain.region\" IS NULL) AS \"__join_null_0\", COALESCE(CAST(component_domain.\"analytics_key_domain.created_at\" AS VARCHAR), '') AS \"__join_value_1\", (component_domain.\"analytics_key_domain.created_at\" IS NULL) AS \"__join_null_1\"\n  FROM component_domain\n),\njoin_keys_2 AS (\nSELECT\n  base.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", base.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\", base.\"amount\" AS \"amount\", COALESCE(CAST(base.\"analytics_key_domain.region\" AS VARCHAR), '') AS \"__join_value_0\", (base.\"analytics_key_domain.region\" IS NULL) AS \"__join_null_0\", COALESCE(CAST(base.\"analytics_key_domain.created_at\" AS VARCHAR), '') AS \"__join_value_1\", (base.\"analytics_key_domain.created_at\" IS NULL) AS \"__join_null_1\"\n  FROM base\n),\ncomponent_base AS (\nSELECT\n  join_keys.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", join_keys.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\", join_keys_2.\"amount\" AS \"amount\"\n  FROM join_keys LEFT JOIN join_keys_2 ON join_keys.\"__join_value_0\" = join_keys_2.\"__join_value_0\" AND join_keys.\"__join_null_0\" = join_keys_2.\"__join_null_0\" AND join_keys.\"__join_value_1\" = join_keys_2.\"__join_value_1\" AND join_keys.\"__join_null_1\" = join_keys_2.\"__join_null_1\"\n),\njoin_keys_3 AS (\nSELECT\n  component_base.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", component_base.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\", component_base.\"amount\" AS \"amount\", COALESCE(CAST(component_base.\"analytics_key_domain.region\" AS VARCHAR), '') AS \"__join_value_0\", (component_base.\"analytics_key_domain.region\" IS NULL) AS \"__join_null_0\", COALESCE(CAST(component_base.\"analytics_key_domain.created_at\" AS VARCHAR), '') AS \"__join_value_1\", (component_base.\"analytics_key_domain.created_at\" IS NULL) AS \"__join_null_1\"\n  FROM component_base\n),\njoin_keys_4 AS (\nSELECT\n  scope.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", scope.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\", scope.\"other\" AS \"other\", COALESCE(CAST(scope.\"analytics_key_domain.region\" AS VARCHAR), '') AS \"__join_value_0\", (scope.\"analytics_key_domain.region\" IS NULL) AS \"__join_null_0\", COALESCE(CAST(scope.\"analytics_key_domain.created_at\" AS VARCHAR), '') AS \"__join_value_1\", (scope.\"analytics_key_domain.created_at\" IS NULL) AS \"__join_null_1\"\n  FROM scope\n),\njoin_keys_5 AS (\nSELECT\n  scope_2.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", scope_2.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\", scope_2.\"third\" AS \"third\", COALESCE(CAST(scope_2.\"analytics_key_domain.region\" AS VARCHAR), '') AS \"__join_value_0\", (scope_2.\"analytics_key_domain.region\" IS NULL) AS \"__join_null_0\", COALESCE(CAST(scope_2.\"analytics_key_domain.created_at\" AS VARCHAR), '') AS \"__join_value_1\", (scope_2.\"analytics_key_domain.created_at\" IS NULL) AS \"__join_null_1\"\n  FROM scope_2\n),\ncombined AS (\nSELECT\n  join_keys_3.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", join_keys_3.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\", join_keys_3.\"amount\" AS \"amount\", join_keys_4.\"other\" AS \"other\", join_keys_5.\"third\" AS \"third\"\n  FROM join_keys_3 LEFT JOIN join_keys_4 ON join_keys_3.\"__join_value_0\" = join_keys_4.\"__join_value_0\" AND join_keys_3.\"__join_null_0\" = join_keys_4.\"__join_null_0\" AND join_keys_3.\"__join_value_1\" = join_keys_4.\"__join_value_1\" AND join_keys_3.\"__join_null_1\" = join_keys_4.\"__join_null_1\" LEFT JOIN join_keys_5 ON join_keys_3.\"__join_value_0\" = join_keys_5.\"__join_value_0\" AND join_keys_3.\"__join_null_0\" = join_keys_5.\"__join_null_0\" AND join_keys_3.\"__join_value_1\" = join_keys_5.\"__join_value_1\" AND join_keys_3.\"__join_null_1\" = join_keys_5.\"__join_null_1\"\n)\nSELECT\n  combined.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", combined.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\", combined.\"amount\" AS \"amount\", combined.\"other\" AS \"other\", combined.\"third\" AS \"third\", (combined.\"amount\" + combined.\"other\") AS \"combined\"\n  FROM combined\n  ORDER BY \"analytics_key_domain.region\", \"analytics_key_domain.created_at\"\n  LIMIT 20",
+      "configuredK": 50000,
+      "expected": [
+        [
+          "A",
+          "2024-03",
+          30,
+          null,
+          null,
+          null
+        ],
+        [
+          "A",
+          "2024-04",
+          13,
+          null,
+          11,
+          null
+        ],
+        [
+          "B",
+          "2024-03",
+          null,
+          40,
+          null,
+          null
+        ],
+        [
+          "B",
+          "2024-04",
+          null,
+          41,
+          null,
+          null
+        ],
+        [
+          null,
+          "2024-03",
+          5,
+          7,
+          null,
+          12
+        ]
+      ],
+      "authoredQuery": {
+        "dimensions": [
+          "analytics_key_domain.region"
+        ],
+        "timeDimensions": [
+          {
+            "dimension": "analytics_key_domain.created_at",
+            "granularity": "month",
+            "dateRange": [
+              "2024-03-01",
+              "2024-04-30"
+            ]
+          }
+        ],
+        "measures": [
+          {
+            "kind": "aggregate",
+            "id": "amount",
+            "agg": "sum",
+            "expr": {
+              "t": "col",
+              "member": "analytics_key_domain.amount"
+            }
+          },
+          {
+            "kind": "scoped",
+            "id": "other",
+            "input": "amount",
+            "population": "source",
+            "groups": {
+              "mode": "keep",
+              "members": [
+                "analytics_key_domain.region",
+                "analytics_key_domain.created_at"
+              ]
+            },
+            "filters": {
+              "mode": "replace",
+              "nodes": [
+                {
+                  "member": "analytics_key_domain.status",
+                  "operator": "equals",
+                  "values": [
+                    "other"
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "kind": "scoped",
+            "id": "third",
+            "input": "amount",
+            "population": "source",
+            "groups": {
+              "mode": "keep",
+              "members": [
+                "analytics_key_domain.region",
+                "analytics_key_domain.created_at"
+              ]
+            },
+            "filters": {
+              "mode": "replace",
+              "nodes": [
+                {
+                  "member": "analytics_key_domain.status",
+                  "operator": "equals",
+                  "values": [
+                    "third"
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "kind": "derived",
+            "id": "combined",
+            "expr": {
+              "t": "bin",
+              "op": "+",
+              "left": {
+                "t": "ref",
+                "id": "amount"
+              },
+              "right": {
+                "t": "ref",
+                "id": "other"
+              }
+            }
+          }
+        ],
+        "filters": [
+          {
+            "member": "analytics_key_domain.status",
+            "operator": "equals",
+            "values": [
+              "current"
+            ]
+          }
+        ],
+        "keyDomain": {
+          "mode": "alignedComponents",
+          "components": [
+            "other"
+          ]
+        },
+        "resultOps": {
+          "sort": [
+            {
+              "id": "analytics_key_domain.region"
+            },
+            {
+              "id": "analytics_key_domain.created_at"
+            }
+          ]
+        },
+        "limit": 20
+      },
+      "emissionRevision": 3
+    },
+    {
+      "id": "MULTIPLE",
+      "query": "WITH base AS (\nSELECT\n  analytics_key_domain.region AS \"analytics_key_domain.region\", DATE_TRUNC('month', analytics_key_domain.created_at) AS \"analytics_key_domain.created_at\", SUM(analytics_key_domain.amount) AS \"amount\"\n  FROM analytics_key_domain\n  WHERE (analytics_key_domain.created_at >= '2024-03-01' AND analytics_key_domain.created_at <= '2024-04-30') AND analytics_key_domain.status = 'current'\n  GROUP BY 1, 2\n),\nscope AS (\nSELECT\n  analytics_key_domain.region AS \"analytics_key_domain.region\", DATE_TRUNC('month', analytics_key_domain.created_at) AS \"analytics_key_domain.created_at\", SUM(analytics_key_domain.amount) AS \"other\"\n  FROM analytics_key_domain\n  WHERE (analytics_key_domain.created_at >= '2024-03-01' AND analytics_key_domain.created_at <= '2024-04-30') AND analytics_key_domain.status = 'other'\n  GROUP BY 1, 2\n),\nscope_2 AS (\nSELECT\n  analytics_key_domain.region AS \"analytics_key_domain.region\", DATE_TRUNC('month', analytics_key_domain.created_at) AS \"analytics_key_domain.created_at\", SUM(analytics_key_domain.amount) AS \"third\"\n  FROM analytics_key_domain\n  WHERE (analytics_key_domain.created_at >= '2024-03-01' AND analytics_key_domain.created_at <= '2024-04-30') AND analytics_key_domain.status = 'third'\n  GROUP BY 1, 2\n),\ncomponent_domain AS (\nSELECT base.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", base.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\" FROM base\nUNION\nSELECT scope.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", scope.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\" FROM scope\nUNION\nSELECT scope_2.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", scope_2.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\" FROM scope_2\n),\njoin_keys AS (\nSELECT\n  component_domain.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", component_domain.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\", COALESCE(CAST(component_domain.\"analytics_key_domain.region\" AS VARCHAR), '') AS \"__join_value_0\", (component_domain.\"analytics_key_domain.region\" IS NULL) AS \"__join_null_0\", COALESCE(CAST(component_domain.\"analytics_key_domain.created_at\" AS VARCHAR), '') AS \"__join_value_1\", (component_domain.\"analytics_key_domain.created_at\" IS NULL) AS \"__join_null_1\"\n  FROM component_domain\n),\njoin_keys_2 AS (\nSELECT\n  base.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", base.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\", base.\"amount\" AS \"amount\", COALESCE(CAST(base.\"analytics_key_domain.region\" AS VARCHAR), '') AS \"__join_value_0\", (base.\"analytics_key_domain.region\" IS NULL) AS \"__join_null_0\", COALESCE(CAST(base.\"analytics_key_domain.created_at\" AS VARCHAR), '') AS \"__join_value_1\", (base.\"analytics_key_domain.created_at\" IS NULL) AS \"__join_null_1\"\n  FROM base\n),\ncomponent_base AS (\nSELECT\n  join_keys.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", join_keys.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\", join_keys_2.\"amount\" AS \"amount\"\n  FROM join_keys LEFT JOIN join_keys_2 ON join_keys.\"__join_value_0\" = join_keys_2.\"__join_value_0\" AND join_keys.\"__join_null_0\" = join_keys_2.\"__join_null_0\" AND join_keys.\"__join_value_1\" = join_keys_2.\"__join_value_1\" AND join_keys.\"__join_null_1\" = join_keys_2.\"__join_null_1\"\n),\njoin_keys_3 AS (\nSELECT\n  component_base.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", component_base.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\", component_base.\"amount\" AS \"amount\", COALESCE(CAST(component_base.\"analytics_key_domain.region\" AS VARCHAR), '') AS \"__join_value_0\", (component_base.\"analytics_key_domain.region\" IS NULL) AS \"__join_null_0\", COALESCE(CAST(component_base.\"analytics_key_domain.created_at\" AS VARCHAR), '') AS \"__join_value_1\", (component_base.\"analytics_key_domain.created_at\" IS NULL) AS \"__join_null_1\"\n  FROM component_base\n),\njoin_keys_4 AS (\nSELECT\n  scope.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", scope.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\", scope.\"other\" AS \"other\", COALESCE(CAST(scope.\"analytics_key_domain.region\" AS VARCHAR), '') AS \"__join_value_0\", (scope.\"analytics_key_domain.region\" IS NULL) AS \"__join_null_0\", COALESCE(CAST(scope.\"analytics_key_domain.created_at\" AS VARCHAR), '') AS \"__join_value_1\", (scope.\"analytics_key_domain.created_at\" IS NULL) AS \"__join_null_1\"\n  FROM scope\n),\njoin_keys_5 AS (\nSELECT\n  scope_2.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", scope_2.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\", scope_2.\"third\" AS \"third\", COALESCE(CAST(scope_2.\"analytics_key_domain.region\" AS VARCHAR), '') AS \"__join_value_0\", (scope_2.\"analytics_key_domain.region\" IS NULL) AS \"__join_null_0\", COALESCE(CAST(scope_2.\"analytics_key_domain.created_at\" AS VARCHAR), '') AS \"__join_value_1\", (scope_2.\"analytics_key_domain.created_at\" IS NULL) AS \"__join_null_1\"\n  FROM scope_2\n),\ncombined AS (\nSELECT\n  join_keys_3.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", join_keys_3.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\", join_keys_3.\"amount\" AS \"amount\", join_keys_4.\"other\" AS \"other\", join_keys_5.\"third\" AS \"third\"\n  FROM join_keys_3 LEFT JOIN join_keys_4 ON join_keys_3.\"__join_value_0\" = join_keys_4.\"__join_value_0\" AND join_keys_3.\"__join_null_0\" = join_keys_4.\"__join_null_0\" AND join_keys_3.\"__join_value_1\" = join_keys_4.\"__join_value_1\" AND join_keys_3.\"__join_null_1\" = join_keys_4.\"__join_null_1\" LEFT JOIN join_keys_5 ON join_keys_3.\"__join_value_0\" = join_keys_5.\"__join_value_0\" AND join_keys_3.\"__join_null_0\" = join_keys_5.\"__join_null_0\" AND join_keys_3.\"__join_value_1\" = join_keys_5.\"__join_value_1\" AND join_keys_3.\"__join_null_1\" = join_keys_5.\"__join_null_1\"\n)\nSELECT\n  combined.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", combined.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\", combined.\"amount\" AS \"amount\", combined.\"other\" AS \"other\", combined.\"third\" AS \"third\", (combined.\"amount\" + combined.\"other\") AS \"combined\"\n  FROM combined\n  ORDER BY \"analytics_key_domain.region\", \"analytics_key_domain.created_at\"\n  LIMIT 20",
+      "configuredK": 50000,
+      "expected": [
+        [
+          "A",
+          "2024-03",
+          30,
+          null,
+          null,
+          null
+        ],
+        [
+          "A",
+          "2024-04",
+          13,
+          null,
+          11,
+          null
+        ],
+        [
+          "B",
+          "2024-03",
+          null,
+          40,
+          null,
+          null
+        ],
+        [
+          "B",
+          "2024-04",
+          null,
+          41,
+          null,
+          null
+        ],
+        [
+          "C",
+          "2024-03",
+          null,
+          null,
+          8,
+          null
+        ],
+        [
+          null,
+          "2024-03",
+          5,
+          7,
+          null,
+          12
+        ]
+      ],
+      "authoredQuery": {
+        "dimensions": [
+          "analytics_key_domain.region"
+        ],
+        "timeDimensions": [
+          {
+            "dimension": "analytics_key_domain.created_at",
+            "granularity": "month",
+            "dateRange": [
+              "2024-03-01",
+              "2024-04-30"
+            ]
+          }
+        ],
+        "measures": [
+          {
+            "kind": "aggregate",
+            "id": "amount",
+            "agg": "sum",
+            "expr": {
+              "t": "col",
+              "member": "analytics_key_domain.amount"
+            }
+          },
+          {
+            "kind": "scoped",
+            "id": "other",
+            "input": "amount",
+            "population": "source",
+            "groups": {
+              "mode": "keep",
+              "members": [
+                "analytics_key_domain.region",
+                "analytics_key_domain.created_at"
+              ]
+            },
+            "filters": {
+              "mode": "replace",
+              "nodes": [
+                {
+                  "member": "analytics_key_domain.status",
+                  "operator": "equals",
+                  "values": [
+                    "other"
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "kind": "scoped",
+            "id": "third",
+            "input": "amount",
+            "population": "source",
+            "groups": {
+              "mode": "keep",
+              "members": [
+                "analytics_key_domain.region",
+                "analytics_key_domain.created_at"
+              ]
+            },
+            "filters": {
+              "mode": "replace",
+              "nodes": [
+                {
+                  "member": "analytics_key_domain.status",
+                  "operator": "equals",
+                  "values": [
+                    "third"
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "kind": "derived",
+            "id": "combined",
+            "expr": {
+              "t": "bin",
+              "op": "+",
+              "left": {
+                "t": "ref",
+                "id": "amount"
+              },
+              "right": {
+                "t": "ref",
+                "id": "other"
+              }
+            }
+          }
+        ],
+        "filters": [
+          {
+            "member": "analytics_key_domain.status",
+            "operator": "equals",
+            "values": [
+              "current"
+            ]
+          }
+        ],
+        "keyDomain": {
+          "mode": "alignedComponents",
+          "components": [
+            "other",
+            "third"
+          ]
+        },
+        "resultOps": {
+          "sort": [
+            {
+              "id": "analytics_key_domain.region"
+            },
+            {
+              "id": "analytics_key_domain.created_at"
+            }
+          ]
+        },
+        "limit": 20
+      },
+      "emissionRevision": 3
+    },
+    {
+      "id": "RESULT-PAGE",
+      "query": "WITH base AS (\nSELECT\n  analytics_key_domain.region AS \"analytics_key_domain.region\", DATE_TRUNC('month', analytics_key_domain.created_at) AS \"analytics_key_domain.created_at\", SUM(analytics_key_domain.amount) AS \"amount\"\n  FROM analytics_key_domain\n  WHERE (analytics_key_domain.created_at >= '2024-03-01' AND analytics_key_domain.created_at <= '2024-04-30') AND analytics_key_domain.status = 'current'\n  GROUP BY 1, 2\n),\nscope AS (\nSELECT\n  analytics_key_domain.region AS \"analytics_key_domain.region\", DATE_TRUNC('month', analytics_key_domain.created_at) AS \"analytics_key_domain.created_at\", SUM(analytics_key_domain.amount) AS \"other\"\n  FROM analytics_key_domain\n  WHERE (analytics_key_domain.created_at >= '2024-03-01' AND analytics_key_domain.created_at <= '2024-04-30') AND analytics_key_domain.status = 'other'\n  GROUP BY 1, 2\n),\nscope_2 AS (\nSELECT\n  analytics_key_domain.region AS \"analytics_key_domain.region\", DATE_TRUNC('month', analytics_key_domain.created_at) AS \"analytics_key_domain.created_at\", SUM(analytics_key_domain.amount) AS \"third\"\n  FROM analytics_key_domain\n  WHERE (analytics_key_domain.created_at >= '2024-03-01' AND analytics_key_domain.created_at <= '2024-04-30') AND analytics_key_domain.status = 'third'\n  GROUP BY 1, 2\n),\ncomponent_domain AS (\nSELECT base.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", base.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\" FROM base\nUNION\nSELECT scope.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", scope.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\" FROM scope\n),\njoin_keys AS (\nSELECT\n  component_domain.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", component_domain.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\", COALESCE(CAST(component_domain.\"analytics_key_domain.region\" AS VARCHAR), '') AS \"__join_value_0\", (component_domain.\"analytics_key_domain.region\" IS NULL) AS \"__join_null_0\", COALESCE(CAST(component_domain.\"analytics_key_domain.created_at\" AS VARCHAR), '') AS \"__join_value_1\", (component_domain.\"analytics_key_domain.created_at\" IS NULL) AS \"__join_null_1\"\n  FROM component_domain\n),\njoin_keys_2 AS (\nSELECT\n  base.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", base.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\", base.\"amount\" AS \"amount\", COALESCE(CAST(base.\"analytics_key_domain.region\" AS VARCHAR), '') AS \"__join_value_0\", (base.\"analytics_key_domain.region\" IS NULL) AS \"__join_null_0\", COALESCE(CAST(base.\"analytics_key_domain.created_at\" AS VARCHAR), '') AS \"__join_value_1\", (base.\"analytics_key_domain.created_at\" IS NULL) AS \"__join_null_1\"\n  FROM base\n),\ncomponent_base AS (\nSELECT\n  join_keys.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", join_keys.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\", join_keys_2.\"amount\" AS \"amount\"\n  FROM join_keys LEFT JOIN join_keys_2 ON join_keys.\"__join_value_0\" = join_keys_2.\"__join_value_0\" AND join_keys.\"__join_null_0\" = join_keys_2.\"__join_null_0\" AND join_keys.\"__join_value_1\" = join_keys_2.\"__join_value_1\" AND join_keys.\"__join_null_1\" = join_keys_2.\"__join_null_1\"\n),\njoin_keys_3 AS (\nSELECT\n  component_base.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", component_base.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\", component_base.\"amount\" AS \"amount\", COALESCE(CAST(component_base.\"analytics_key_domain.region\" AS VARCHAR), '') AS \"__join_value_0\", (component_base.\"analytics_key_domain.region\" IS NULL) AS \"__join_null_0\", COALESCE(CAST(component_base.\"analytics_key_domain.created_at\" AS VARCHAR), '') AS \"__join_value_1\", (component_base.\"analytics_key_domain.created_at\" IS NULL) AS \"__join_null_1\"\n  FROM component_base\n),\njoin_keys_4 AS (\nSELECT\n  scope.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", scope.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\", scope.\"other\" AS \"other\", COALESCE(CAST(scope.\"analytics_key_domain.region\" AS VARCHAR), '') AS \"__join_value_0\", (scope.\"analytics_key_domain.region\" IS NULL) AS \"__join_null_0\", COALESCE(CAST(scope.\"analytics_key_domain.created_at\" AS VARCHAR), '') AS \"__join_value_1\", (scope.\"analytics_key_domain.created_at\" IS NULL) AS \"__join_null_1\"\n  FROM scope\n),\njoin_keys_5 AS (\nSELECT\n  scope_2.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", scope_2.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\", scope_2.\"third\" AS \"third\", COALESCE(CAST(scope_2.\"analytics_key_domain.region\" AS VARCHAR), '') AS \"__join_value_0\", (scope_2.\"analytics_key_domain.region\" IS NULL) AS \"__join_null_0\", COALESCE(CAST(scope_2.\"analytics_key_domain.created_at\" AS VARCHAR), '') AS \"__join_value_1\", (scope_2.\"analytics_key_domain.created_at\" IS NULL) AS \"__join_null_1\"\n  FROM scope_2\n),\ncombined AS (\nSELECT\n  join_keys_3.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", join_keys_3.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\", join_keys_3.\"amount\" AS \"amount\", join_keys_4.\"other\" AS \"other\", join_keys_5.\"third\" AS \"third\"\n  FROM join_keys_3 LEFT JOIN join_keys_4 ON join_keys_3.\"__join_value_0\" = join_keys_4.\"__join_value_0\" AND join_keys_3.\"__join_null_0\" = join_keys_4.\"__join_null_0\" AND join_keys_3.\"__join_value_1\" = join_keys_4.\"__join_value_1\" AND join_keys_3.\"__join_null_1\" = join_keys_4.\"__join_null_1\" LEFT JOIN join_keys_5 ON join_keys_3.\"__join_value_0\" = join_keys_5.\"__join_value_0\" AND join_keys_3.\"__join_null_0\" = join_keys_5.\"__join_null_0\" AND join_keys_3.\"__join_value_1\" = join_keys_5.\"__join_value_1\" AND join_keys_3.\"__join_null_1\" = join_keys_5.\"__join_null_1\"\n),\nderived AS (\nSELECT\n  combined.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", combined.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\", combined.\"amount\" AS \"amount\", combined.\"other\" AS \"other\", combined.\"third\" AS \"third\", (combined.\"amount\" + combined.\"other\") AS \"combined\"\n  FROM combined\n),\nfiltered AS (\nSELECT\n  derived.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", derived.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\", derived.\"amount\" AS \"amount\", derived.\"other\" AS \"other\", derived.\"third\" AS \"third\", derived.\"combined\" AS \"combined\"\n  FROM derived\n  WHERE derived.\"other\" > '6'\n)\nSELECT\n  filtered.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", filtered.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\", filtered.\"amount\" AS \"amount\", filtered.\"other\" AS \"other\", filtered.\"third\" AS \"third\", filtered.\"combined\" AS \"combined\"\n  FROM filtered\n  ORDER BY \"other\" DESC\n  LIMIT 1\n  OFFSET 1",
+      "configuredK": 50000,
+      "expected": [
+        [
+          "B",
+          "2024-03",
+          null,
+          40,
+          null,
+          null
+        ]
+      ],
+      "authoredQuery": {
+        "dimensions": [
+          "analytics_key_domain.region"
+        ],
+        "timeDimensions": [
+          {
+            "dimension": "analytics_key_domain.created_at",
+            "granularity": "month",
+            "dateRange": [
+              "2024-03-01",
+              "2024-04-30"
+            ]
+          }
+        ],
+        "measures": [
+          {
+            "kind": "aggregate",
+            "id": "amount",
+            "agg": "sum",
+            "expr": {
+              "t": "col",
+              "member": "analytics_key_domain.amount"
+            }
+          },
+          {
+            "kind": "scoped",
+            "id": "other",
+            "input": "amount",
+            "population": "source",
+            "groups": {
+              "mode": "keep",
+              "members": [
+                "analytics_key_domain.region",
+                "analytics_key_domain.created_at"
+              ]
+            },
+            "filters": {
+              "mode": "replace",
+              "nodes": [
+                {
+                  "member": "analytics_key_domain.status",
+                  "operator": "equals",
+                  "values": [
+                    "other"
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "kind": "scoped",
+            "id": "third",
+            "input": "amount",
+            "population": "source",
+            "groups": {
+              "mode": "keep",
+              "members": [
+                "analytics_key_domain.region",
+                "analytics_key_domain.created_at"
+              ]
+            },
+            "filters": {
+              "mode": "replace",
+              "nodes": [
+                {
+                  "member": "analytics_key_domain.status",
+                  "operator": "equals",
+                  "values": [
+                    "third"
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "kind": "derived",
+            "id": "combined",
+            "expr": {
+              "t": "bin",
+              "op": "+",
+              "left": {
+                "t": "ref",
+                "id": "amount"
+              },
+              "right": {
+                "t": "ref",
+                "id": "other"
+              }
+            }
+          }
+        ],
+        "filters": [
+          {
+            "member": "analytics_key_domain.status",
+            "operator": "equals",
+            "values": [
+              "current"
+            ]
+          }
+        ],
+        "keyDomain": {
+          "mode": "alignedComponents",
+          "components": [
+            "other"
+          ]
+        },
+        "resultOps": {
+          "filters": [
+            {
+              "member": "other",
+              "operator": "gt",
+              "values": [
+                "6"
+              ]
+            }
+          ],
+          "sort": [
+            {
+              "id": "other",
+              "desc": true
+            }
+          ],
+          "page": {
+            "limit": 1,
+            "offset": 1
+          }
+        },
+        "limit": 20
+      },
+      "emissionRevision": 3
+    },
+    {
+      "id": "EMPTY",
+      "query": "WITH base AS (\nSELECT\n  analytics_key_domain.region AS \"analytics_key_domain.region\", DATE_TRUNC('month', analytics_key_domain.created_at) AS \"analytics_key_domain.created_at\", SUM(analytics_key_domain.amount) AS \"amount\"\n  FROM analytics_key_domain\n  WHERE (analytics_key_domain.created_at >= '2024-03-01' AND analytics_key_domain.created_at <= '2024-04-30') AND analytics_key_domain.status = 'current'\n  GROUP BY 1, 2\n),\nscope AS (\nSELECT\n  analytics_key_domain.region AS \"analytics_key_domain.region\", DATE_TRUNC('month', analytics_key_domain.created_at) AS \"analytics_key_domain.created_at\", SUM(analytics_key_domain.amount) AS \"other\"\n  FROM analytics_key_domain\n  WHERE (analytics_key_domain.created_at >= '2024-03-01' AND analytics_key_domain.created_at <= '2024-04-30') AND analytics_key_domain.status = 'other'\n  GROUP BY 1, 2\n),\nscope_2 AS (\nSELECT\n  analytics_key_domain.region AS \"analytics_key_domain.region\", DATE_TRUNC('month', analytics_key_domain.created_at) AS \"analytics_key_domain.created_at\", SUM(analytics_key_domain.amount) AS \"third\"\n  FROM analytics_key_domain\n  WHERE (analytics_key_domain.created_at >= '2024-03-01' AND analytics_key_domain.created_at <= '2024-04-30') AND analytics_key_domain.status = 'third'\n  GROUP BY 1, 2\n),\ncomponent_domain AS (\nSELECT base.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", base.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\" FROM base\nUNION\nSELECT scope.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", scope.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\" FROM scope\n),\njoin_keys AS (\nSELECT\n  component_domain.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", component_domain.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\", COALESCE(CAST(component_domain.\"analytics_key_domain.region\" AS VARCHAR), '') AS \"__join_value_0\", (component_domain.\"analytics_key_domain.region\" IS NULL) AS \"__join_null_0\", COALESCE(CAST(component_domain.\"analytics_key_domain.created_at\" AS VARCHAR), '') AS \"__join_value_1\", (component_domain.\"analytics_key_domain.created_at\" IS NULL) AS \"__join_null_1\"\n  FROM component_domain\n),\njoin_keys_2 AS (\nSELECT\n  base.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", base.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\", base.\"amount\" AS \"amount\", COALESCE(CAST(base.\"analytics_key_domain.region\" AS VARCHAR), '') AS \"__join_value_0\", (base.\"analytics_key_domain.region\" IS NULL) AS \"__join_null_0\", COALESCE(CAST(base.\"analytics_key_domain.created_at\" AS VARCHAR), '') AS \"__join_value_1\", (base.\"analytics_key_domain.created_at\" IS NULL) AS \"__join_null_1\"\n  FROM base\n),\ncomponent_base AS (\nSELECT\n  join_keys.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", join_keys.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\", join_keys_2.\"amount\" AS \"amount\"\n  FROM join_keys LEFT JOIN join_keys_2 ON join_keys.\"__join_value_0\" = join_keys_2.\"__join_value_0\" AND join_keys.\"__join_null_0\" = join_keys_2.\"__join_null_0\" AND join_keys.\"__join_value_1\" = join_keys_2.\"__join_value_1\" AND join_keys.\"__join_null_1\" = join_keys_2.\"__join_null_1\"\n),\njoin_keys_3 AS (\nSELECT\n  component_base.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", component_base.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\", component_base.\"amount\" AS \"amount\", COALESCE(CAST(component_base.\"analytics_key_domain.region\" AS VARCHAR), '') AS \"__join_value_0\", (component_base.\"analytics_key_domain.region\" IS NULL) AS \"__join_null_0\", COALESCE(CAST(component_base.\"analytics_key_domain.created_at\" AS VARCHAR), '') AS \"__join_value_1\", (component_base.\"analytics_key_domain.created_at\" IS NULL) AS \"__join_null_1\"\n  FROM component_base\n),\njoin_keys_4 AS (\nSELECT\n  scope.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", scope.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\", scope.\"other\" AS \"other\", COALESCE(CAST(scope.\"analytics_key_domain.region\" AS VARCHAR), '') AS \"__join_value_0\", (scope.\"analytics_key_domain.region\" IS NULL) AS \"__join_null_0\", COALESCE(CAST(scope.\"analytics_key_domain.created_at\" AS VARCHAR), '') AS \"__join_value_1\", (scope.\"analytics_key_domain.created_at\" IS NULL) AS \"__join_null_1\"\n  FROM scope\n),\njoin_keys_5 AS (\nSELECT\n  scope_2.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", scope_2.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\", scope_2.\"third\" AS \"third\", COALESCE(CAST(scope_2.\"analytics_key_domain.region\" AS VARCHAR), '') AS \"__join_value_0\", (scope_2.\"analytics_key_domain.region\" IS NULL) AS \"__join_null_0\", COALESCE(CAST(scope_2.\"analytics_key_domain.created_at\" AS VARCHAR), '') AS \"__join_value_1\", (scope_2.\"analytics_key_domain.created_at\" IS NULL) AS \"__join_null_1\"\n  FROM scope_2\n),\ncombined AS (\nSELECT\n  join_keys_3.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", join_keys_3.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\", join_keys_3.\"amount\" AS \"amount\", join_keys_4.\"other\" AS \"other\", join_keys_5.\"third\" AS \"third\"\n  FROM join_keys_3 LEFT JOIN join_keys_4 ON join_keys_3.\"__join_value_0\" = join_keys_4.\"__join_value_0\" AND join_keys_3.\"__join_null_0\" = join_keys_4.\"__join_null_0\" AND join_keys_3.\"__join_value_1\" = join_keys_4.\"__join_value_1\" AND join_keys_3.\"__join_null_1\" = join_keys_4.\"__join_null_1\" LEFT JOIN join_keys_5 ON join_keys_3.\"__join_value_0\" = join_keys_5.\"__join_value_0\" AND join_keys_3.\"__join_null_0\" = join_keys_5.\"__join_null_0\" AND join_keys_3.\"__join_value_1\" = join_keys_5.\"__join_value_1\" AND join_keys_3.\"__join_null_1\" = join_keys_5.\"__join_null_1\"\n),\nderived AS (\nSELECT\n  combined.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", combined.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\", combined.\"amount\" AS \"amount\", combined.\"other\" AS \"other\", combined.\"third\" AS \"third\", (combined.\"amount\" + combined.\"other\") AS \"combined\"\n  FROM combined\n),\nfiltered AS (\nSELECT\n  derived.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", derived.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\", derived.\"amount\" AS \"amount\", derived.\"other\" AS \"other\", derived.\"third\" AS \"third\", derived.\"combined\" AS \"combined\"\n  FROM derived\n  WHERE derived.\"other\" > '1000'\n)\nSELECT\n  filtered.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", filtered.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\", filtered.\"amount\" AS \"amount\", filtered.\"other\" AS \"other\", filtered.\"third\" AS \"third\", filtered.\"combined\" AS \"combined\"\n  FROM filtered\n  ORDER BY \"analytics_key_domain.region\"\n  LIMIT 20",
+      "configuredK": 50000,
+      "expected": [],
+      "authoredQuery": {
+        "dimensions": [
+          "analytics_key_domain.region"
+        ],
+        "timeDimensions": [
+          {
+            "dimension": "analytics_key_domain.created_at",
+            "granularity": "month",
+            "dateRange": [
+              "2024-03-01",
+              "2024-04-30"
+            ]
+          }
+        ],
+        "measures": [
+          {
+            "kind": "aggregate",
+            "id": "amount",
+            "agg": "sum",
+            "expr": {
+              "t": "col",
+              "member": "analytics_key_domain.amount"
+            }
+          },
+          {
+            "kind": "scoped",
+            "id": "other",
+            "input": "amount",
+            "population": "source",
+            "groups": {
+              "mode": "keep",
+              "members": [
+                "analytics_key_domain.region",
+                "analytics_key_domain.created_at"
+              ]
+            },
+            "filters": {
+              "mode": "replace",
+              "nodes": [
+                {
+                  "member": "analytics_key_domain.status",
+                  "operator": "equals",
+                  "values": [
+                    "other"
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "kind": "scoped",
+            "id": "third",
+            "input": "amount",
+            "population": "source",
+            "groups": {
+              "mode": "keep",
+              "members": [
+                "analytics_key_domain.region",
+                "analytics_key_domain.created_at"
+              ]
+            },
+            "filters": {
+              "mode": "replace",
+              "nodes": [
+                {
+                  "member": "analytics_key_domain.status",
+                  "operator": "equals",
+                  "values": [
+                    "third"
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "kind": "derived",
+            "id": "combined",
+            "expr": {
+              "t": "bin",
+              "op": "+",
+              "left": {
+                "t": "ref",
+                "id": "amount"
+              },
+              "right": {
+                "t": "ref",
+                "id": "other"
+              }
+            }
+          }
+        ],
+        "filters": [
+          {
+            "member": "analytics_key_domain.status",
+            "operator": "equals",
+            "values": [
+              "current"
+            ]
+          }
+        ],
+        "keyDomain": {
+          "mode": "alignedComponents",
+          "components": [
+            "other"
+          ]
+        },
+        "resultOps": {
+          "filters": [
+            {
+              "member": "other",
+              "operator": "gt",
+              "values": [
+                "1000"
+              ]
+            }
+          ],
+          "sort": [
+            {
+              "id": "analytics_key_domain.region"
+            }
+          ]
+        },
+        "limit": 20
+      },
+      "emissionRevision": 3
+    },
+    {
+      "id": "BOUNDARIES",
+      "query": "WITH base AS (\nSELECT\n  analytics_key_domain.region AS \"analytics_key_domain.region\", DATE_TRUNC('month', analytics_key_domain.created_at) AS \"analytics_key_domain.created_at\", SUM(analytics_key_domain.amount) AS \"amount\"\n  FROM analytics_key_domain\n  WHERE (analytics_key_domain.created_at >= '2025-03-01' AND analytics_key_domain.created_at <= '2025-03-31') AND analytics_key_domain.status = 'current' AND analytics_key_domain.id > '0'\n  GROUP BY 1, 2\n),\nscope AS (\nSELECT\n  analytics_key_domain.region AS \"analytics_key_domain.region\", DATE_TRUNC('month', analytics_key_domain.created_at) AS \"analytics_key_domain.created_at\", SUM(analytics_key_domain.amount) AS \"other\"\n  FROM analytics_key_domain\n  WHERE (analytics_key_domain.created_at >= '2025-03-01' AND analytics_key_domain.created_at <= '2025-03-31') AND analytics_key_domain.status = 'other' AND analytics_key_domain.id > '0'\n  GROUP BY 1, 2\n),\nscope_2 AS (\nSELECT\n  analytics_key_domain.region AS \"analytics_key_domain.region\", DATE_TRUNC('month', analytics_key_domain.created_at) AS \"analytics_key_domain.created_at\", SUM(analytics_key_domain.amount) AS \"third\"\n  FROM analytics_key_domain\n  WHERE (analytics_key_domain.created_at >= '2025-03-01' AND analytics_key_domain.created_at <= '2025-03-31') AND analytics_key_domain.status = 'third' AND analytics_key_domain.id > '0'\n  GROUP BY 1, 2\n),\ncomponent_domain AS (\nSELECT base.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", base.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\" FROM base\nUNION\nSELECT scope.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", scope.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\" FROM scope\n),\njoin_keys AS (\nSELECT\n  component_domain.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", component_domain.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\", COALESCE(CAST(component_domain.\"analytics_key_domain.region\" AS VARCHAR), '') AS \"__join_value_0\", (component_domain.\"analytics_key_domain.region\" IS NULL) AS \"__join_null_0\", COALESCE(CAST(component_domain.\"analytics_key_domain.created_at\" AS VARCHAR), '') AS \"__join_value_1\", (component_domain.\"analytics_key_domain.created_at\" IS NULL) AS \"__join_null_1\"\n  FROM component_domain\n),\njoin_keys_2 AS (\nSELECT\n  base.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", base.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\", base.\"amount\" AS \"amount\", COALESCE(CAST(base.\"analytics_key_domain.region\" AS VARCHAR), '') AS \"__join_value_0\", (base.\"analytics_key_domain.region\" IS NULL) AS \"__join_null_0\", COALESCE(CAST(base.\"analytics_key_domain.created_at\" AS VARCHAR), '') AS \"__join_value_1\", (base.\"analytics_key_domain.created_at\" IS NULL) AS \"__join_null_1\"\n  FROM base\n),\ncomponent_base AS (\nSELECT\n  join_keys.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", join_keys.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\", join_keys_2.\"amount\" AS \"amount\"\n  FROM join_keys LEFT JOIN join_keys_2 ON join_keys.\"__join_value_0\" = join_keys_2.\"__join_value_0\" AND join_keys.\"__join_null_0\" = join_keys_2.\"__join_null_0\" AND join_keys.\"__join_value_1\" = join_keys_2.\"__join_value_1\" AND join_keys.\"__join_null_1\" = join_keys_2.\"__join_null_1\"\n),\njoin_keys_3 AS (\nSELECT\n  component_base.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", component_base.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\", component_base.\"amount\" AS \"amount\", COALESCE(CAST(component_base.\"analytics_key_domain.region\" AS VARCHAR), '') AS \"__join_value_0\", (component_base.\"analytics_key_domain.region\" IS NULL) AS \"__join_null_0\", COALESCE(CAST(component_base.\"analytics_key_domain.created_at\" AS VARCHAR), '') AS \"__join_value_1\", (component_base.\"analytics_key_domain.created_at\" IS NULL) AS \"__join_null_1\"\n  FROM component_base\n),\njoin_keys_4 AS (\nSELECT\n  scope.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", scope.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\", scope.\"other\" AS \"other\", COALESCE(CAST(scope.\"analytics_key_domain.region\" AS VARCHAR), '') AS \"__join_value_0\", (scope.\"analytics_key_domain.region\" IS NULL) AS \"__join_null_0\", COALESCE(CAST(scope.\"analytics_key_domain.created_at\" AS VARCHAR), '') AS \"__join_value_1\", (scope.\"analytics_key_domain.created_at\" IS NULL) AS \"__join_null_1\"\n  FROM scope\n),\njoin_keys_5 AS (\nSELECT\n  scope_2.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", scope_2.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\", scope_2.\"third\" AS \"third\", COALESCE(CAST(scope_2.\"analytics_key_domain.region\" AS VARCHAR), '') AS \"__join_value_0\", (scope_2.\"analytics_key_domain.region\" IS NULL) AS \"__join_null_0\", COALESCE(CAST(scope_2.\"analytics_key_domain.created_at\" AS VARCHAR), '') AS \"__join_value_1\", (scope_2.\"analytics_key_domain.created_at\" IS NULL) AS \"__join_null_1\"\n  FROM scope_2\n),\ncombined AS (\nSELECT\n  join_keys_3.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", join_keys_3.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\", join_keys_3.\"amount\" AS \"amount\", join_keys_4.\"other\" AS \"other\", join_keys_5.\"third\" AS \"third\"\n  FROM join_keys_3 LEFT JOIN join_keys_4 ON join_keys_3.\"__join_value_0\" = join_keys_4.\"__join_value_0\" AND join_keys_3.\"__join_null_0\" = join_keys_4.\"__join_null_0\" AND join_keys_3.\"__join_value_1\" = join_keys_4.\"__join_value_1\" AND join_keys_3.\"__join_null_1\" = join_keys_4.\"__join_null_1\" LEFT JOIN join_keys_5 ON join_keys_3.\"__join_value_0\" = join_keys_5.\"__join_value_0\" AND join_keys_3.\"__join_null_0\" = join_keys_5.\"__join_null_0\" AND join_keys_3.\"__join_value_1\" = join_keys_5.\"__join_value_1\" AND join_keys_3.\"__join_null_1\" = join_keys_5.\"__join_null_1\"\n),\nderived AS (\nSELECT\n  combined.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", combined.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\", combined.\"amount\" AS \"amount\", combined.\"other\" AS \"other\", combined.\"third\" AS \"third\", (combined.\"amount\" + combined.\"other\") AS \"combined\"\n  FROM combined\n),\nfiltered AS (\nSELECT\n  derived.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", derived.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\", derived.\"amount\" AS \"amount\", derived.\"other\" AS \"other\", derived.\"third\" AS \"third\", derived.\"combined\" AS \"combined\"\n  FROM derived\n  WHERE derived.\"analytics_key_domain.region\" IN ('00110001', '00050001', '00050000', '00049999')\n)\nSELECT\n  filtered.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", filtered.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\", filtered.\"amount\" AS \"amount\", filtered.\"other\" AS \"other\", filtered.\"third\" AS \"third\", filtered.\"combined\" AS \"combined\"\n  FROM filtered\n  ORDER BY \"analytics_key_domain.region\" DESC\n  LIMIT 4",
+      "configuredK": 50000,
+      "expected": [
+        [
+          "00110001",
+          "2025-03",
+          null,
+          1100010,
+          null,
+          null
+        ],
+        [
+          "00050001",
+          "2025-03",
+          null,
+          500010,
+          null,
+          null
+        ],
+        [
+          "00050000",
+          "2025-03",
+          50000,
+          null,
+          null,
+          null
+        ],
+        [
+          "00049999",
+          "2025-03",
+          null,
+          499990,
+          null,
+          null
+        ]
+      ],
+      "authoredQuery": {
+        "dimensions": [
+          "analytics_key_domain.region"
+        ],
+        "timeDimensions": [
+          {
+            "dimension": "analytics_key_domain.created_at",
+            "granularity": "month",
+            "dateRange": [
+              "2025-03-01",
+              "2025-03-31"
+            ]
+          }
+        ],
+        "measures": [
+          {
+            "kind": "aggregate",
+            "id": "amount",
+            "agg": "sum",
+            "expr": {
+              "t": "col",
+              "member": "analytics_key_domain.amount"
+            }
+          },
+          {
+            "kind": "scoped",
+            "id": "other",
+            "input": "amount",
+            "population": "source",
+            "groups": {
+              "mode": "keep",
+              "members": [
+                "analytics_key_domain.region",
+                "analytics_key_domain.created_at"
+              ]
+            },
+            "filters": {
+              "mode": "replace",
+              "nodes": [
+                {
+                  "member": "analytics_key_domain.status",
+                  "operator": "equals",
+                  "values": [
+                    "other"
+                  ]
+                },
+                {
+                  "member": "analytics_key_domain.id",
+                  "operator": "gt",
+                  "values": [
+                    "0"
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "kind": "scoped",
+            "id": "third",
+            "input": "amount",
+            "population": "source",
+            "groups": {
+              "mode": "keep",
+              "members": [
+                "analytics_key_domain.region",
+                "analytics_key_domain.created_at"
+              ]
+            },
+            "filters": {
+              "mode": "replace",
+              "nodes": [
+                {
+                  "member": "analytics_key_domain.status",
+                  "operator": "equals",
+                  "values": [
+                    "third"
+                  ]
+                },
+                {
+                  "member": "analytics_key_domain.id",
+                  "operator": "gt",
+                  "values": [
+                    "0"
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "kind": "derived",
+            "id": "combined",
+            "expr": {
+              "t": "bin",
+              "op": "+",
+              "left": {
+                "t": "ref",
+                "id": "amount"
+              },
+              "right": {
+                "t": "ref",
+                "id": "other"
+              }
+            }
+          }
+        ],
+        "filters": [
+          {
+            "member": "analytics_key_domain.status",
+            "operator": "equals",
+            "values": [
+              "current"
+            ]
+          },
+          {
+            "member": "analytics_key_domain.id",
+            "operator": "gt",
+            "values": [
+              "0"
+            ]
+          }
+        ],
+        "keyDomain": {
+          "mode": "alignedComponents",
+          "components": [
+            "other"
+          ]
+        },
+        "resultOps": {
+          "sort": [
+            {
+              "id": "analytics_key_domain.region",
+              "desc": true
+            }
+          ],
+          "filters": [
+            {
+              "member": "analytics_key_domain.region",
+              "operator": "equals",
+              "values": [
+                "00110001",
+                "00050001",
+                "00050000",
+                "00049999"
+              ]
+            }
+          ],
+          "page": {
+            "limit": 4
+          }
+        },
+        "limit": 20
+      },
+      "emissionRevision": 3,
+      "population": 110001,
+      "baseGroups": 55000,
+      "componentGroups": 55001,
+      "alignedGroups": 110001
+    },
+    {
+      "id": "GLOBAL-PAGE",
+      "query": "WITH base AS (\nSELECT\n  analytics_key_domain.region AS \"analytics_key_domain.region\", DATE_TRUNC('month', analytics_key_domain.created_at) AS \"analytics_key_domain.created_at\", SUM(analytics_key_domain.amount) AS \"amount\"\n  FROM analytics_key_domain\n  WHERE (analytics_key_domain.created_at >= '2025-03-01' AND analytics_key_domain.created_at <= '2025-03-31') AND analytics_key_domain.status = 'current' AND analytics_key_domain.id > '0'\n  GROUP BY 1, 2\n),\nscope AS (\nSELECT\n  analytics_key_domain.region AS \"analytics_key_domain.region\", DATE_TRUNC('month', analytics_key_domain.created_at) AS \"analytics_key_domain.created_at\", SUM(analytics_key_domain.amount) AS \"other\"\n  FROM analytics_key_domain\n  WHERE (analytics_key_domain.created_at >= '2025-03-01' AND analytics_key_domain.created_at <= '2025-03-31') AND analytics_key_domain.status = 'other' AND analytics_key_domain.id > '0'\n  GROUP BY 1, 2\n),\nscope_2 AS (\nSELECT\n  analytics_key_domain.region AS \"analytics_key_domain.region\", DATE_TRUNC('month', analytics_key_domain.created_at) AS \"analytics_key_domain.created_at\", SUM(analytics_key_domain.amount) AS \"third\"\n  FROM analytics_key_domain\n  WHERE (analytics_key_domain.created_at >= '2025-03-01' AND analytics_key_domain.created_at <= '2025-03-31') AND analytics_key_domain.status = 'third' AND analytics_key_domain.id > '0'\n  GROUP BY 1, 2\n),\ncomponent_domain AS (\nSELECT base.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", base.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\" FROM base\nUNION\nSELECT scope.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", scope.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\" FROM scope\n),\njoin_keys AS (\nSELECT\n  component_domain.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", component_domain.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\", COALESCE(CAST(component_domain.\"analytics_key_domain.region\" AS VARCHAR), '') AS \"__join_value_0\", (component_domain.\"analytics_key_domain.region\" IS NULL) AS \"__join_null_0\", COALESCE(CAST(component_domain.\"analytics_key_domain.created_at\" AS VARCHAR), '') AS \"__join_value_1\", (component_domain.\"analytics_key_domain.created_at\" IS NULL) AS \"__join_null_1\"\n  FROM component_domain\n),\njoin_keys_2 AS (\nSELECT\n  base.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", base.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\", base.\"amount\" AS \"amount\", COALESCE(CAST(base.\"analytics_key_domain.region\" AS VARCHAR), '') AS \"__join_value_0\", (base.\"analytics_key_domain.region\" IS NULL) AS \"__join_null_0\", COALESCE(CAST(base.\"analytics_key_domain.created_at\" AS VARCHAR), '') AS \"__join_value_1\", (base.\"analytics_key_domain.created_at\" IS NULL) AS \"__join_null_1\"\n  FROM base\n),\ncomponent_base AS (\nSELECT\n  join_keys.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", join_keys.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\", join_keys_2.\"amount\" AS \"amount\"\n  FROM join_keys LEFT JOIN join_keys_2 ON join_keys.\"__join_value_0\" = join_keys_2.\"__join_value_0\" AND join_keys.\"__join_null_0\" = join_keys_2.\"__join_null_0\" AND join_keys.\"__join_value_1\" = join_keys_2.\"__join_value_1\" AND join_keys.\"__join_null_1\" = join_keys_2.\"__join_null_1\"\n),\njoin_keys_3 AS (\nSELECT\n  component_base.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", component_base.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\", component_base.\"amount\" AS \"amount\", COALESCE(CAST(component_base.\"analytics_key_domain.region\" AS VARCHAR), '') AS \"__join_value_0\", (component_base.\"analytics_key_domain.region\" IS NULL) AS \"__join_null_0\", COALESCE(CAST(component_base.\"analytics_key_domain.created_at\" AS VARCHAR), '') AS \"__join_value_1\", (component_base.\"analytics_key_domain.created_at\" IS NULL) AS \"__join_null_1\"\n  FROM component_base\n),\njoin_keys_4 AS (\nSELECT\n  scope.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", scope.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\", scope.\"other\" AS \"other\", COALESCE(CAST(scope.\"analytics_key_domain.region\" AS VARCHAR), '') AS \"__join_value_0\", (scope.\"analytics_key_domain.region\" IS NULL) AS \"__join_null_0\", COALESCE(CAST(scope.\"analytics_key_domain.created_at\" AS VARCHAR), '') AS \"__join_value_1\", (scope.\"analytics_key_domain.created_at\" IS NULL) AS \"__join_null_1\"\n  FROM scope\n),\njoin_keys_5 AS (\nSELECT\n  scope_2.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", scope_2.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\", scope_2.\"third\" AS \"third\", COALESCE(CAST(scope_2.\"analytics_key_domain.region\" AS VARCHAR), '') AS \"__join_value_0\", (scope_2.\"analytics_key_domain.region\" IS NULL) AS \"__join_null_0\", COALESCE(CAST(scope_2.\"analytics_key_domain.created_at\" AS VARCHAR), '') AS \"__join_value_1\", (scope_2.\"analytics_key_domain.created_at\" IS NULL) AS \"__join_null_1\"\n  FROM scope_2\n),\ncombined AS (\nSELECT\n  join_keys_3.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", join_keys_3.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\", join_keys_3.\"amount\" AS \"amount\", join_keys_4.\"other\" AS \"other\", join_keys_5.\"third\" AS \"third\"\n  FROM join_keys_3 LEFT JOIN join_keys_4 ON join_keys_3.\"__join_value_0\" = join_keys_4.\"__join_value_0\" AND join_keys_3.\"__join_null_0\" = join_keys_4.\"__join_null_0\" AND join_keys_3.\"__join_value_1\" = join_keys_4.\"__join_value_1\" AND join_keys_3.\"__join_null_1\" = join_keys_4.\"__join_null_1\" LEFT JOIN join_keys_5 ON join_keys_3.\"__join_value_0\" = join_keys_5.\"__join_value_0\" AND join_keys_3.\"__join_null_0\" = join_keys_5.\"__join_null_0\" AND join_keys_3.\"__join_value_1\" = join_keys_5.\"__join_value_1\" AND join_keys_3.\"__join_null_1\" = join_keys_5.\"__join_null_1\"\n)\nSELECT\n  combined.\"analytics_key_domain.region\" AS \"analytics_key_domain.region\", combined.\"analytics_key_domain.created_at\" AS \"analytics_key_domain.created_at\", combined.\"amount\" AS \"amount\", combined.\"other\" AS \"other\", combined.\"third\" AS \"third\", (combined.\"amount\" + combined.\"other\") AS \"combined\"\n  FROM combined\n  ORDER BY \"analytics_key_domain.region\" DESC\n  LIMIT 3\n  OFFSET 10000",
+      "configuredK": 50000,
+      "expected": [
+        [
+          "00100001",
+          "2025-03",
+          null,
+          1000010,
+          null,
+          null
+        ],
+        [
+          "00100000",
+          "2025-03",
+          100000,
+          null,
+          null,
+          null
+        ],
+        [
+          "00099999",
+          "2025-03",
+          null,
+          999990,
+          null,
+          null
+        ]
+      ],
+      "authoredQuery": {
+        "dimensions": [
+          "analytics_key_domain.region"
+        ],
+        "timeDimensions": [
+          {
+            "dimension": "analytics_key_domain.created_at",
+            "granularity": "month",
+            "dateRange": [
+              "2025-03-01",
+              "2025-03-31"
+            ]
+          }
+        ],
+        "measures": [
+          {
+            "kind": "aggregate",
+            "id": "amount",
+            "agg": "sum",
+            "expr": {
+              "t": "col",
+              "member": "analytics_key_domain.amount"
+            }
+          },
+          {
+            "kind": "scoped",
+            "id": "other",
+            "input": "amount",
+            "population": "source",
+            "groups": {
+              "mode": "keep",
+              "members": [
+                "analytics_key_domain.region",
+                "analytics_key_domain.created_at"
+              ]
+            },
+            "filters": {
+              "mode": "replace",
+              "nodes": [
+                {
+                  "member": "analytics_key_domain.status",
+                  "operator": "equals",
+                  "values": [
+                    "other"
+                  ]
+                },
+                {
+                  "member": "analytics_key_domain.id",
+                  "operator": "gt",
+                  "values": [
+                    "0"
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "kind": "scoped",
+            "id": "third",
+            "input": "amount",
+            "population": "source",
+            "groups": {
+              "mode": "keep",
+              "members": [
+                "analytics_key_domain.region",
+                "analytics_key_domain.created_at"
+              ]
+            },
+            "filters": {
+              "mode": "replace",
+              "nodes": [
+                {
+                  "member": "analytics_key_domain.status",
+                  "operator": "equals",
+                  "values": [
+                    "third"
+                  ]
+                },
+                {
+                  "member": "analytics_key_domain.id",
+                  "operator": "gt",
+                  "values": [
+                    "0"
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "kind": "derived",
+            "id": "combined",
+            "expr": {
+              "t": "bin",
+              "op": "+",
+              "left": {
+                "t": "ref",
+                "id": "amount"
+              },
+              "right": {
+                "t": "ref",
+                "id": "other"
+              }
+            }
+          }
+        ],
+        "filters": [
+          {
+            "member": "analytics_key_domain.status",
+            "operator": "equals",
+            "values": [
+              "current"
+            ]
+          },
+          {
+            "member": "analytics_key_domain.id",
+            "operator": "gt",
+            "values": [
+              "0"
+            ]
+          }
+        ],
+        "keyDomain": {
+          "mode": "alignedComponents",
+          "components": [
+            "other"
+          ]
+        },
+        "resultOps": {
+          "sort": [
+            {
+              "id": "analytics_key_domain.region",
+              "desc": true
+            }
+          ],
+          "page": {
+            "limit": 3,
+            "offset": 10000
+          }
+        },
+        "limit": 20
+      },
+      "emissionRevision": 3,
+      "population": 110001,
+      "baseGroups": 55000,
+      "componentGroups": 55001,
+      "alignedGroups": 110001
+    }
+  ]
+}

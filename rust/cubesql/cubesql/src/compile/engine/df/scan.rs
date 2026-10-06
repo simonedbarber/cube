@@ -19,6 +19,7 @@ pub use datafusion::{
         array::{
             ArrayRef, BooleanBuilder, Date32Builder, DecimalBuilder, Float32Builder,
             Float64Builder, Int16Builder, Int32Builder, Int64Builder, NullArray, StringBuilder,
+            UInt64Builder,
         },
         datatypes::{DataType, Schema, SchemaRef},
         error::{ArrowError, Result as ArrowResult},
@@ -121,6 +122,7 @@ impl Display for CacheMode {
 
 #[derive(Debug, Clone)]
 pub struct CubeScanOptions {
+    pub sql_order_nulls_first: Vec<bool>,
     pub change_user: Option<String>,
     pub max_records: Option<usize>,
     pub cache_mode: Option<CacheMode>,
@@ -180,8 +182,16 @@ impl UserDefinedLogicalNode for CubeScanNode {
     fn fmt_for_explain(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "CubeScan: request={}",
-            serde_json::to_string_pretty(&self.request).unwrap()
+            "CubeScan: request={}{}",
+            serde_json::to_string_pretty(&self.request).unwrap(),
+            if self.options.sql_order_nulls_first.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    " sql_order_nulls_first={:?}",
+                    self.options.sql_order_nulls_first
+                )
+            }
         )
     }
 
@@ -262,6 +272,11 @@ impl ExtensionPlanner for CubeScanExtensionPlanner {
                         )))?;
 
                 let schema = SchemaRef::new(wrapped_sql_node.schema().as_ref().into());
+                let mut options = scan_node.options.clone();
+                if let Some(cap) = wrapped_sql_node.buffered_max_records(self.config_obj.as_ref()) {
+                    options.max_records =
+                        Some(options.max_records.map_or(cap, |limit| limit.min(cap)));
+                }
                 Some(Arc::new(CubeScanExecutionPlan {
                     schema,
                     member_fields: wrapped_sql_node.member_fields.clone(),
@@ -269,7 +284,7 @@ impl ExtensionPlanner for CubeScanExtensionPlanner {
                     request: wrapped_sql_node.request.clone(),
                     wrapped_sql: Some(wrapped_sql_node.wrapped_sql.clone()),
                     auth_context: scan_node.auth_context.clone(),
-                    options: scan_node.options.clone(),
+                    options,
                     meta: self.meta.clone(),
                     span_id: scan_node.span_id.clone(),
                     config_obj: self.config_obj.clone(),
@@ -538,6 +553,7 @@ impl ExecutionPlan for CubeScanExecutionPlan {
 
         let mut meta = self.meta.clone();
         meta.set_change_user(self.options.change_user.clone());
+        meta.set_sql_order_nulls_first(self.options.sql_order_nulls_first.clone());
 
         let mut one_shot_stream = CubeScanOneShotStream::new(
             self.schema.clone(),
@@ -1011,6 +1027,115 @@ fn load_to_stream_sync(one_shot_stream: &mut CubeScanOneShotStream) -> Result<()
     Ok(())
 }
 
+// JSON/Neon numeric cells arrive as f64. Refuse values outside the exact
+// JavaScript integer domain; full-range UInt64 must arrive as decimal strings.
+fn response_uint64_number(value: f64) -> std::result::Result<u64, CubeError> {
+    if !value.is_finite() || value < 0.0 || value.fract() != 0.0 || value > 9_007_199_254_740_991.0
+    {
+        return Err(CubeError::internal(format!(
+            "Cannot decode {:?} as an exact UInt64 response value; use a decimal string for large integers",
+            value
+        )));
+    }
+    Ok(value as u64)
+}
+
+// Exact Int64/Decimal source types must not turn malformed or already-rounded
+// cells into NULLs or plausible integers. Decimal fractional values arrive as
+// strings; only safe whole JS numbers have an exact recoverable value.
+fn response_int64_number(value: f64) -> std::result::Result<i64, CubeError> {
+    if !value.is_finite() || value.fract() != 0.0 || value.abs() > 9_007_199_254_740_991.0 {
+        return Err(CubeError::internal(
+            "Cannot decode an inexact numeric cell as Int64; use an exact integer string"
+                .to_string(),
+        ));
+    }
+    Ok(value as i64)
+}
+
+fn response_decimal_string(
+    value: &str,
+    precision: usize,
+    scale: usize,
+) -> std::result::Result<i128, CubeError> {
+    let invalid = || {
+        CubeError::internal(format!(
+            "Cannot decode source cell as exact Decimal({}, {})",
+            precision, scale
+        ))
+    };
+    if precision == 0 || precision > 38 || scale > precision || value.len() > 4096 {
+        return Err(invalid());
+    }
+    let (negative, unsigned) = match value.as_bytes().first() {
+        Some(b'-') => (true, &value[1..]),
+        Some(b'+') => (false, &value[1..]),
+        _ => (false, value),
+    };
+    let mut parts = unsigned.split('.');
+    let integer = parts.next().unwrap_or("");
+    let fraction = parts.next().unwrap_or("");
+    if parts.next().is_some()
+        || (integer.is_empty() && fraction.is_empty())
+        || !integer.bytes().all(|v| v.is_ascii_digit())
+        || !fraction.bytes().all(|v| v.is_ascii_digit())
+    {
+        return Err(invalid());
+    }
+    if fraction.len() > scale && fraction[scale..].bytes().any(|v| v != b'0') {
+        return Err(invalid());
+    }
+    let fraction = &fraction[..fraction.len().min(scale)];
+    let digits = format!(
+        "{}{:0<width$}",
+        integer.trim_start_matches('0'),
+        fraction,
+        width = scale
+    );
+    let significant = digits.trim_start_matches('0');
+    if significant.len() > precision {
+        return Err(invalid());
+    }
+    let coefficient = if significant.is_empty() {
+        0
+    } else {
+        significant.parse::<i128>().map_err(|_| invalid())?
+    };
+    Ok(if negative { -coefficient } else { coefficient })
+}
+
+fn response_decimal_literal(
+    value: i128,
+    input_scale: usize,
+    precision: usize,
+    scale: usize,
+) -> std::result::Result<i128, CubeError> {
+    let invalid = || {
+        CubeError::internal(
+            "Cannot retain an exact decimal literal at the requested precision and scale"
+                .to_string(),
+        )
+    };
+    if precision == 0 || precision > 38 || scale > precision || input_scale > 38 {
+        return Err(invalid());
+    }
+    let adjusted = if scale >= input_scale {
+        value
+            .checked_mul(10_i128.pow((scale - input_scale) as u32))
+            .ok_or_else(invalid)?
+    } else {
+        let divisor = 10_i128.pow((input_scale - scale) as u32);
+        if value % divisor != 0 {
+            return Err(invalid());
+        }
+        value / divisor
+    };
+    if adjusted.unsigned_abs().to_string().len() > precision {
+        return Err(invalid());
+    }
+    Ok(adjusted)
+}
+
 // Body of `transform_response`: builds one Arrow column per schema field from a
 // `ColumnarValueObject`, fetching each column once via `ColumnarValueObject::column`.
 macro_rules! transform_response_body {
@@ -1093,21 +1218,28 @@ macro_rules! transform_response_body {
                         $response,
                         field_name,
                         {
-                            (FieldValue::Number(number), builder) => builder.append_value(number.round() as i64)?,
-                            (FieldValue::String(s), builder)  => match s.parse::<i64>() {
-                                Ok(v) => builder.append_value(v)?,
-                                Err(error) => {
-                                    warn!(
-                                        "Unable to parse value as i64: {}",
-                                        error.to_string()
-                                    );
-
-                                    builder.append_null()?
-                                }
-                            },
+                            (FieldValue::Number(number), builder) => builder.append_value(response_int64_number(number)?)?,
+                            (FieldValue::String(s), builder) => builder.append_value(s.parse::<i64>().map_err(|_| CubeError::internal("Cannot decode source cell as exact Int64".to_string()))?)?,
                         },
                         {
                             (ScalarValue::Int64(v), builder) => builder.append_option(*v)?,
+                        }
+                    )
+                }
+                DataType::UInt64 => {
+                    build_column!(
+                        DataType::UInt64,
+                        UInt64Builder,
+                        $response,
+                        field_name,
+                        {
+                            (FieldValue::Number(number), builder) => builder.append_value(response_uint64_number(number)?)?,
+                            (FieldValue::String(s), builder) => builder.append_value(s.parse::<u64>().map_err(|error| {
+                                CubeError::internal(format!("Cannot decode {:?} as UInt64 response value: {}", s, error))
+                            })?)?,
+                        },
+                        {
+                            (ScalarValue::UInt64(v), builder) => builder.append_option(*v)?,
                         }
                     )
                 }
@@ -1268,36 +1400,16 @@ macro_rules! transform_response_body {
                         $response,
                         field_name,
                         {
-                            (FieldValue::String(s), builder) => {
-                                let mut parts = s.split(".");
-                                match parts.next() {
-                                    None => builder.append_null()?,
-                                    Some(int_part) => {
-                                        let frac_part = format!("{:0<width$}", parts.next().unwrap_or(""), width=scale);
-                                        if frac_part.len() > *scale {
-                                            Err(DataFusionError::Execution(format!("Decimal scale is higher than requested: expected {}, got {}", scale, frac_part.len())))?;
-                                        }
-                                        if let Some(_) = parts.next() {
-                                            Err(DataFusionError::Execution(format!("Unable to parse decimal, value contains two dots: {}", s)))?;
-                                        }
-                                        let decimal_str = format!("{}{}", int_part, frac_part);
-                                        if decimal_str.len() > *precision {
-                                            Err(DataFusionError::Execution(format!("Decimal precision is higher than requested: expected {}, got {}", precision, decimal_str.len())))?;
-                                        }
-                                        if let Ok(value) = decimal_str.parse::<i128>() {
-                                            builder.append_value(value)?;
-                                        } else {
-                                            Err(DataFusionError::Execution(format!("Unable to parse decimal as an i128: {}", decimal_str)))?;
-                                        }
-                                    }
-                                };
+                            (FieldValue::String(s), builder) => builder.append_value(response_decimal_string(&s, *precision, *scale)?)?,
+                            (FieldValue::Number(number), builder) => {
+                                response_int64_number(number)?;
+                                builder.append_value(response_decimal_string(&number.to_string(), *precision, *scale)?)?;
                             },
                         },
                         {
-                            (ScalarValue::Decimal128(v, _, _), builder) => {
-                                // TODO: check precision and scale, adjust accordingly
+                            (ScalarValue::Decimal128(v, _, input_scale), builder) => {
                                 if let Some(v) = v {
-                                    builder.append_value(*v)?;
+                                    builder.append_value(response_decimal_literal(*v, *input_scale, *precision, *scale)?)?;
                                 } else {
                                     builder.append_null()?;
                                 }
@@ -2037,6 +2149,7 @@ mod tests {
                 base_path: "base_path".to_string(),
             }),
             options: CubeScanOptions {
+                sql_order_nulls_first: vec![],
                 change_user: None,
                 max_records: None,
                 cache_mode: None,
@@ -2047,6 +2160,105 @@ mod tests {
             span_id: None,
             config_obj: crate::config::Config::test().config_obj(),
         }
+    }
+
+    #[tokio::test]
+    async fn buffered_wrapped_scan_rejects_an_injected_cap_before_delivery() -> Result<(), CubeError>
+    {
+        use crate::config::ConfigObjImpl;
+        use datafusion::{
+            execution::context::SessionContext,
+            logical_plan::{plan::Extension, DFField, DFSchema},
+            physical_plan::planner::DefaultPhysicalPlanner,
+        };
+
+        // The existing transport returns five typed rows. A generated buffered
+        // cap must reject those rows at the cap, before a parent can filter,
+        // join, aggregate or page them into an apparently complete small result.
+        for (original_limit, configured_cap, existing_cap, must_reject) in [
+            (None, 5, None, true),
+            (None, 7, None, false),
+            (Some(5), 5, None, false),
+            (Some(6), 5, None, true),
+            (None, 7, Some(3), true),
+        ] {
+            let prototype = build_test_scan_node();
+            let mut original_request = prototype.request.clone();
+            original_request.limit = original_limit;
+            let mut options = prototype.options.clone();
+            options.max_records = existing_cap;
+            let original_scan = CubeScanNode::new(
+                Arc::new(DFSchema::new_with_metadata(
+                    prototype
+                        .schema
+                        .fields()
+                        .iter()
+                        .enumerate()
+                        .map(|(index, field)| {
+                            DFField::new(
+                                None,
+                                &format!("c{index}"),
+                                field.data_type().clone(),
+                                field.is_nullable(),
+                            )
+                        })
+                        .collect(),
+                    HashMap::new(),
+                )?),
+                prototype.member_fields.clone(),
+                original_request.clone(),
+                prototype.auth_context.clone(),
+                options,
+                vec!["KibanaSampleDataEcommerce".to_string()],
+                None,
+            );
+            let mut generated_request = original_request;
+            generated_request.limit =
+                Some(original_limit.map_or(configured_cap, |limit| limit.min(configured_cap)));
+            let wrapped = CubeScanWrappedSqlNode::new(
+                Arc::new(LogicalPlan::Extension(Extension {
+                    node: Arc::new(original_scan),
+                })),
+                SqlQuery::new(
+                    format!("SELECT fixture_rows LIMIT {configured_cap}"),
+                    vec![],
+                ),
+                generated_request,
+                prototype.member_fields.clone(),
+            );
+            let mut config = ConfigObjImpl::default();
+            config.stream_mode = false;
+            config.non_streaming_query_max_row_limit = configured_cap;
+            let planner = CubeScanExtensionPlanner {
+                transport: prototype.transport,
+                meta: prototype.meta,
+                config_obj: Arc::new(config),
+            };
+            let physical = planner
+                .plan_extension(
+                    &DefaultPhysicalPlanner::default(),
+                    &wrapped,
+                    &[],
+                    &[],
+                    &SessionContext::new().state.read(),
+                )?
+                .expect("wrapped source has a physical plan");
+            // Repeat delivery as well: the completeness check is on every
+            // response, including a response reused by the native cache.
+            for _ in 0..2 {
+                let result = physical.execute(0, build_test_task_context()?).await;
+                if must_reject {
+                    let error = result
+                        .err()
+                        .expect("inserted/stricter cap must reject potentially incomplete rows");
+                    assert!(error.to_string().contains("maximum row limit"), "{}", error);
+                } else {
+                    let batches = common::collect(result?).await?;
+                    assert_eq!(batches.iter().map(RecordBatch::num_rows).sum::<usize>(), 5);
+                }
+            }
+        }
+        Ok(())
     }
 
     #[tokio::test]
@@ -2119,5 +2331,274 @@ mod tests {
         );
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod uint64_response_tests {
+    use super::*;
+    use datafusion::arrow::array::{Array, UInt64Array};
+
+    fn unsigned_schema(names: &[&str]) -> SchemaRef {
+        Arc::new(Schema::new(
+            names
+                .iter()
+                .map(|name| datafusion::arrow::datatypes::Field::new(*name, DataType::UInt64, true))
+                .collect::<Vec<_>>(),
+        ))
+    }
+
+    #[test]
+    fn uint64_response_preserves_four_row_number_columns_and_nulls() {
+        let names = ["asc_first", "asc_last", "desc_first", "desc_last"];
+        let values = vec![
+            vec![1, 2, 3, 4],
+            vec![4, 1, 2, 3],
+            vec![1, 4, 3, 2],
+            vec![4, 3, 2, 1],
+        ];
+        let columns = values
+            .iter()
+            .map(|column| {
+                column
+                    .iter()
+                    .map(|value| serde_json::json!(value))
+                    .chain(std::iter::once(Value::Null))
+                    .collect()
+            })
+            .collect();
+        let mut response = JsonColumnarValueObject::try_new(
+            names.iter().map(|name| name.to_string()).collect(),
+            columns,
+        )
+        .unwrap();
+        let fields = names
+            .iter()
+            .map(|name| MemberField::regular(name.to_string()))
+            .collect::<Vec<_>>();
+        let batch = transform_response(&mut response, unsigned_schema(&names), &fields).unwrap();
+        for (index, expected) in values.iter().enumerate() {
+            let column = batch
+                .column(index)
+                .as_any()
+                .downcast_ref::<UInt64Array>()
+                .unwrap();
+            assert_eq!(column.data_type(), &DataType::UInt64);
+            for (row, value) in expected.iter().enumerate() {
+                assert_eq!(column.value(row), *value as u64);
+            }
+            assert!(column.is_null(4));
+        }
+    }
+
+    #[test]
+    fn uint64_response_preserves_decimal_strings_above_signed_and_float_ranges() {
+        let mut response = JsonColumnarValueObject::try_new(
+            vec!["rank".to_string()],
+            vec![vec![
+                serde_json::json!(0),
+                serde_json::json!("9007199254740993"),
+                serde_json::json!("9223372036854775808"),
+                serde_json::json!(u64::MAX.to_string()),
+                Value::Null,
+            ]],
+        )
+        .unwrap();
+        let batch = transform_response(
+            &mut response,
+            unsigned_schema(&["rank"]),
+            &vec![MemberField::regular("rank".to_string())],
+        )
+        .unwrap();
+        let column = batch
+            .column(0)
+            .as_any()
+            .downcast_ref::<UInt64Array>()
+            .unwrap();
+        assert_eq!(column.value(0), 0);
+        assert_eq!(column.value(1), 9_007_199_254_740_993);
+        assert_eq!(column.value(2), 9_223_372_036_854_775_808);
+        assert_eq!(column.value(3), u64::MAX);
+        assert!(column.is_null(4));
+    }
+
+    #[test]
+    fn uint64_response_rejects_negative_fractional_overflow_and_lossy_values() {
+        for value in [-1.0, 1.5, 9_007_199_254_740_992.0, f64::INFINITY, f64::NAN] {
+            assert!(response_uint64_number(value).is_err());
+        }
+        assert_eq!(
+            response_uint64_number(9_007_199_254_740_991.0).unwrap(),
+            9_007_199_254_740_991
+        );
+        for value in [
+            serde_json::json!(-1),
+            serde_json::json!(1.5),
+            serde_json::json!("-1"),
+            serde_json::json!("1.5"),
+            serde_json::json!("18446744073709551616"),
+            serde_json::json!("bad"),
+        ] {
+            let mut response =
+                JsonColumnarValueObject::try_new(vec!["rank".to_string()], vec![vec![value]])
+                    .unwrap();
+            assert!(transform_response(
+                &mut response,
+                unsigned_schema(&["rank"]),
+                &vec![MemberField::regular("rank".to_string())]
+            )
+            .is_err());
+        }
+    }
+
+    #[test]
+    fn uint64_literal_response_keeps_unsigned_values_and_nulls() {
+        for value in [Some(u64::MAX), None] {
+            let mut response = LiteralRowsValueObject { row_count: 2 };
+            let batch = transform_response(
+                &mut response,
+                unsigned_schema(&["rank"]),
+                &vec![MemberField::Literal(ScalarValue::UInt64(value))],
+            )
+            .unwrap();
+            let column = batch
+                .column(0)
+                .as_any()
+                .downcast_ref::<UInt64Array>()
+                .unwrap();
+            for row in 0..2 {
+                match value {
+                    Some(value) => assert_eq!(column.value(row), value),
+                    None => assert!(column.is_null(row)),
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod numeric_result_response_tests {
+    use super::*;
+    use datafusion::arrow::array::{Array, DecimalArray, Int64Array};
+
+    fn decode(
+        kind: DataType,
+        values: Vec<Value>,
+    ) -> std::result::Result<Vec<RecordBatch>, CubeError> {
+        let schema = Arc::new(Schema::new(vec![datafusion::arrow::datatypes::Field::new(
+            "value", kind, true,
+        )]));
+        let mut response =
+            JsonColumnarValueObject::try_new(vec!["value".to_string()], vec![values])?;
+        transform_response(
+            &mut response,
+            schema,
+            &vec![MemberField::regular("value".to_string())],
+        )
+        .map(|batch| vec![batch])
+    }
+
+    #[test]
+    fn exact_numeric_result_transport_preserves_decimal_and_signed_integer_boundaries() {
+        let result = decode(
+            DataType::Decimal(38, 9),
+            vec![
+                serde_json::json!("9007199254740993.000000000"),
+                serde_json::json!("-99999999999999999999999999999.999999999"),
+                Value::Null,
+                serde_json::json!("0.1"),
+                serde_json::json!("0000.1000000000"),
+                serde_json::json!(3),
+            ],
+        )
+        .unwrap();
+        let values = result[0]
+            .column(0)
+            .as_any()
+            .downcast_ref::<DecimalArray>()
+            .unwrap();
+        assert_eq!(values.value(0), 9007199254740993000000000);
+        assert_eq!(values.value(1), -99999999999999999999999999999999999999);
+        assert!(values.is_null(2));
+        assert_eq!(values.value(3), 100000000);
+        assert_eq!(values.value(4), 100000000);
+        assert_eq!(values.value(5), 3000000000);
+        let result = decode(
+            DataType::Int64,
+            vec![
+                serde_json::json!(i64::MIN.to_string()),
+                serde_json::json!(i64::MAX.to_string()),
+                serde_json::json!("9007199254740993"),
+                serde_json::json!(-7),
+                Value::Null,
+            ],
+        )
+        .unwrap();
+        let values = result[0]
+            .column(0)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .unwrap();
+        assert_eq!(values.value(0), i64::MIN);
+        assert_eq!(values.value(1), i64::MAX);
+        assert_eq!(values.value(2), 9007199254740993);
+        assert_eq!(values.value(3), -7);
+        assert!(values.is_null(4));
+    }
+
+    #[test]
+    fn exact_numeric_result_transport_refuses_inexact_or_malformed_cells() {
+        for value in [
+            serde_json::json!(0.1),
+            serde_json::json!(9007199254740992_f64),
+            serde_json::json!("1.0000000001"),
+            serde_json::json!("100000000000000000000000000000.000000000"),
+            serde_json::json!("1.2.3"),
+            serde_json::json!("NaN"),
+            serde_json::json!(""),
+            serde_json::json!("-"),
+            serde_json::json!(true),
+        ] {
+            assert!(decode(DataType::Decimal(38, 9), vec![value]).is_err());
+        }
+        for value in [
+            serde_json::json!(0.5),
+            serde_json::json!(-9007199254740992_f64),
+            serde_json::json!("9223372036854775808"),
+            serde_json::json!("-9223372036854775809"),
+            serde_json::json!("1.2"),
+            serde_json::json!("NaN"),
+            serde_json::json!(""),
+        ] {
+            assert!(decode(DataType::Int64, vec![value]).is_err());
+        }
+    }
+
+    #[test]
+    fn exact_numeric_result_literals_are_rescaled_without_rounding() {
+        let schema = Arc::new(Schema::new(vec![datafusion::arrow::datatypes::Field::new(
+            "value",
+            DataType::Decimal(38, 9),
+            true,
+        )]));
+        let mut response =
+            JsonColumnarValueObject::try_new(vec!["unused".to_string()], vec![vec![Value::Null]])
+                .unwrap();
+        let result = transform_response(
+            &mut response,
+            schema,
+            &vec![MemberField::Literal(ScalarValue::Decimal128(Some(1), 1, 1))],
+        )
+        .unwrap();
+        let values = result
+            .column(0)
+            .as_any()
+            .downcast_ref::<DecimalArray>()
+            .unwrap();
+        assert_eq!(values.value(0), 100000000);
+        assert_eq!(response_decimal_literal(-1200, 3, 3, 1).unwrap(), -12);
+        assert!(response_decimal_literal(123, 2, 3, 1).is_err());
+        assert!(response_decimal_literal(999, 0, 3, 1).is_err());
+        assert!(response_decimal_literal(i128::MAX, 0, 38, 9).is_err());
     }
 }

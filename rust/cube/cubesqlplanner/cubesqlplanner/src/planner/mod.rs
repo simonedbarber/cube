@@ -19,6 +19,7 @@ pub mod planners;
 pub mod query_properties;
 pub mod query_properties_compiler;
 pub mod query_tools;
+pub(crate) mod row_level_filters;
 pub mod sql_templates;
 pub mod state;
 pub mod top_level_planner;

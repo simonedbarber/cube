@@ -48,6 +48,11 @@ pub enum Expr {
     GroupAny(QualifiedColumnName),
     Function(FunctionExpression),
     Asterisk,
+    /// Preserve the ordinary primary-key re-join's NULL identity behavior.
+    IdentityValue {
+        value: Box<Expr>,
+        keys: Vec<Expr>,
+    },
 }
 
 impl Expr {
@@ -98,6 +103,20 @@ impl Expr {
                 None,
                 None,
             ),
+            Self::IdentityValue { value, keys } => {
+                let missing = keys
+                    .iter()
+                    .map(|key| {
+                        templates.is_null_expr(&key.to_sql(templates, context.clone())?, false)
+                    })
+                    .collect::<Result<Vec<_>, _>>()?
+                    .join(" OR ");
+                templates.case(
+                    None,
+                    vec![(missing, "NULL".to_string())],
+                    Some(value.to_sql(templates, context)?),
+                )
+            }
             Self::Asterisk => Ok("*".to_string()),
         }
     }

@@ -434,6 +434,39 @@ impl RewriteRules for FilterRules {
                     "?filter_op",
                     "?filter_values",
                     "?filter_aliases",
+                    false,
+                ),
+            ),
+            transforming_rewrite(
+                "filter-replacer-sql-not-equal",
+                filter_replacer(
+                    binary_expr(column_expr("?column"), "?op", "?constant"),
+                    "?alias_to_cube",
+                    "?members",
+                    "?filter_aliases",
+                ),
+                filter_op(
+                    filter_op_filters(
+                        filter_member("?filter_member", "?filter_op", "?filter_values"),
+                        filter_member(
+                            "?filter_member",
+                            "FilterMemberOp:set",
+                            "?sql_not_equal_empty_values",
+                        ),
+                    ),
+                    "FilterOpOp:and",
+                ),
+                self.transform_filter(
+                    "?column",
+                    "?op",
+                    "?constant",
+                    "?alias_to_cube",
+                    "?members",
+                    "?filter_member",
+                    "?filter_op",
+                    "?filter_values",
+                    "?filter_aliases",
+                    true,
                 ),
             ),
             transforming_rewrite(
@@ -3652,6 +3685,7 @@ impl FilterRules {
         filter_op_var: &'static str,
         filter_values_var: &'static str,
         filter_aliases_var: &'static str,
+        sql_not_equal: bool,
     ) -> impl Fn(&mut CubeEGraph, &mut Subst) -> bool {
         let column_var = column_var.parse().unwrap();
         let op_var = op_var.parse().unwrap();
@@ -3668,6 +3702,11 @@ impl FilterRules {
                 .cloned()
                 .collect();
             for expr_op in expr_ops {
+                // SQL inequality rejects NULL; Cube's public notEquals includes it.
+                // Keep these rules disjoint so extraction cannot choose a bare leaf.
+                if matches!(expr_op, Operator::NotEq) != sql_not_equal {
+                    continue;
+                }
                 if let Some(ConstantFolding::Scalar(literal)) =
                     &egraph[subst[constant_var]].data.constant.clone()
                 {
@@ -3857,6 +3896,14 @@ impl FilterRules {
                                         )),
                                     );
 
+                                    if sql_not_equal {
+                                        subst.insert(
+                                            var!("?sql_not_equal_empty_values"),
+                                            egraph.add(LogicalPlanLanguage::FilterMemberValues(
+                                                FilterMemberValues(vec![]),
+                                            )),
+                                        );
+                                    }
                                     return true;
                                 }
                             }

@@ -3201,7 +3201,8 @@ async fn test_wrapper_limitless_post_processing_allowed_by_default() {
     }
     init_testing_logger();
 
-    // Without the flag the query still runs, and still reads a truncated result
+    // Without the flag the query still compiles; execution must reject a
+    // defensive source cap rather than consume potentially truncated inputs.
     let query_plan = convert_select_to_query_plan(
         UNPUSHABLE_LIMITLESS_POST_PROCESSING_QUERY.to_string(),
         DatabaseProtocol::PostgreSQL,
@@ -3214,6 +3215,62 @@ async fn test_wrapper_limitless_post_processing_allowed_by_default() {
         "filter is left to post processing: {:?}",
         logical_plan
     );
+}
+
+#[tokio::test]
+async fn buffered_wrapped_compiler_retains_completeness_before_small_outer_limit() {
+    assert!(
+        Rewriter::sql_push_down_enabled(),
+        "this regression requires SQL wrapper planning"
+    );
+    init_testing_logger();
+
+    for cap in [3, 7] {
+        let mut config = ConfigObjImpl::default();
+        config.stream_mode = false;
+        config.non_streaming_query_max_row_limit = cap;
+        let context =
+            TestContext::with_config(DatabaseProtocol::PostgreSQL, Arc::new(config.clone())).await;
+        let query = format!("{} LIMIT 1", UNPUSHABLE_LIMITLESS_POST_PROCESSING_QUERY);
+        let planned = context.convert_sql_to_cube_query(&query).await.unwrap();
+        let logical = planned.as_logical_plan();
+        assert!(
+            logical.find_filter().is_some(),
+            "the source has residual consumers"
+        );
+        let source = logical.find_cube_scan_wrapped_sql_deep();
+        assert_eq!(
+            source.buffered_max_records(&config),
+            Some(cap as usize),
+            "a small outer limit cannot certify complete source inputs"
+        );
+        planned.as_physical_plan().await.unwrap();
+
+        let explicitly_bounded = query.replace("GROUP BY 1", &format!("GROUP BY 1 LIMIT {cap}"));
+        let planned = context
+            .convert_sql_to_cube_query(&explicitly_bounded)
+            .await
+            .unwrap();
+        let source = planned.as_logical_plan().find_cube_scan_wrapped_sql_deep();
+        assert_eq!(
+            source.buffered_max_records(&config),
+            None,
+            "an authored source limit retains its declared meaning"
+        );
+        planned.as_physical_plan().await.unwrap();
+
+        config.stream_mode = true;
+        let context =
+            TestContext::with_config(DatabaseProtocol::PostgreSQL, Arc::new(config.clone())).await;
+        let planned = context.convert_sql_to_cube_query(&query).await.unwrap();
+        let source = planned.as_logical_plan().find_cube_scan_wrapped_sql_deep();
+        assert_eq!(
+            source.buffered_max_records(&config),
+            None,
+            "streamed source inputs are not capped"
+        );
+        planned.as_physical_plan().await.unwrap();
+    }
 }
 
 #[tokio::test]
@@ -4909,4 +4966,68 @@ async fn test_wrapper_cast_without_template_folds_to_cube_scan_filter() {
         Some("KibanaSampleDataEcommerce.order_date")
     );
     assert_eq!(filters[0].operator.as_deref(), Some("afterOrOnDate"));
+}
+
+/// Integral float values must retain their floating type when the wrapper spells SQL again.
+#[tokio::test]
+async fn test_wrapper_float_literal_reprint() {
+    if !Rewriter::sql_push_down_enabled() {
+        return;
+    }
+    init_testing_logger();
+    let plan = convert_select_to_query_plan(
+        "SELECT COALESCE(customer_gender, 'N/A') AS gender, AVG(avgPrice) / CAST(2 AS DOUBLE PRECISION), AVG(avgPrice) + CAST(1 AS REAL), AVG(avgPrice) + CAST(-0.0 AS DOUBLE PRECISION), AVG(avgPrice) + CAST(0.125 AS DOUBLE PRECISION), AVG(avgPrice) + CAST(1e-20 AS DOUBLE PRECISION) FROM KibanaSampleDataEcommerce GROUP BY 1".to_string(),
+        DatabaseProtocol::PostgreSQL,
+    ).await;
+    let sql = plan
+        .as_logical_plan()
+        .find_cube_scan_wrapped_sql()
+        .wrapped_sql
+        .sql;
+    assert!(
+        sql.contains("CAST(2.0 AS DOUBLE)"),
+        "division denominator lost its float type: {}",
+        sql
+    );
+    assert!(
+        sql.contains("CAST(1.0 AS FLOAT)"),
+        "Float32 lost its type: {}",
+        sql
+    );
+    assert!(
+        sql.contains("CAST(-0.0 AS DOUBLE)"),
+        "negative zero lost its sign: {}",
+        sql
+    );
+    assert!(
+        sql.contains("CAST(0.125 AS DOUBLE)"),
+        "fraction changed: {}",
+        sql
+    );
+    assert!(
+        sql.contains("CAST(1e-20 AS DOUBLE)"),
+        "exponent changed: {}",
+        sql
+    );
+}
+
+#[tokio::test]
+async fn test_wrapper_float_literal_missing_type_template() {
+    if !Rewriter::sql_push_down_enabled() {
+        return;
+    }
+    init_testing_logger();
+    let plan = convert_select_to_query_plan_customized(
+        "SELECT COALESCE(customer_gender, 'N/A') AS gender, AVG(avgPrice) / CAST(2 AS DOUBLE PRECISION) FROM KibanaSampleDataEcommerce GROUP BY 1".to_string(),
+        DatabaseProtocol::PostgreSQL,
+        vec![("types/double".to_string(), "".to_string())],
+    ).await;
+    // An unsupported float type stays outside the source wrapper rather than becoming integer division.
+    let logical = plan.as_logical_plan();
+    let rendered = format!("{logical:?}");
+    assert!(
+        rendered.contains("Float64"),
+        "missing template erased floating semantics: {}",
+        rendered
+    );
 }

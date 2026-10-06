@@ -1,3 +1,4 @@
+use super::row_level_filters::RowLevelFilters;
 use super::ParamsAllocator;
 use crate::cube_bridge::base_query_options::{FilterValue, MaskedMemberItem};
 use crate::cube_bridge::base_tools::BaseTools;
@@ -52,6 +53,9 @@ pub struct QueryTools {
     // so this cache forms no reference cycle. It stays here only until the
     // early-compilation refactor resolves mask filters up front.
     member_mask_filters: RefCell<HashMap<String, FilterItem>>,
+    // Like compiled mask filters, these are installed during construction and
+    // hold only symbols/filter values, never an Rc<QueryTools> cycle.
+    row_level_filters: RefCell<Option<Rc<RowLevelFilters>>>,
 }
 
 impl QueryTools {
@@ -95,6 +99,7 @@ impl QueryTools {
             convert_tz_for_raw_time_dimension,
             masked_members: masked_set,
             member_mask_filters: RefCell::new(HashMap::new()),
+            row_level_filters: RefCell::new(None),
         }))
     }
 
@@ -102,6 +107,14 @@ impl QueryTools {
     /// has compiled them (it owns the `Compiler` needed to do so).
     pub(crate) fn set_member_mask_filters(&self, filters: HashMap<String, FilterItem>) {
         *self.member_mask_filters.borrow_mut() = filters;
+    }
+
+    pub(crate) fn set_row_level_filters(&self, filters: Option<RowLevelFilters>) {
+        *self.row_level_filters.borrow_mut() = filters.map(Rc::new);
+    }
+
+    pub(crate) fn row_level_filters(&self) -> Option<Rc<RowLevelFilters>> {
+        self.row_level_filters.borrow().clone()
     }
 
     pub fn is_member_masked(&self, member_path: &str) -> bool {
