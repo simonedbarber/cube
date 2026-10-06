@@ -66,6 +66,14 @@ export class DuckDBQuery extends BaseQuery {
     templates.functions.UTCTIMESTAMP = '(NOW() AT TIME ZONE \'UTC\')';
     templates.functions.LEAST = 'LEAST({{ args_concat }})';
     templates.functions.GREATEST = 'GREATEST({{ args_concat }})';
+    // DuckDB returns NaN for correlation with a zero-variance paired input;
+    // the PostgreSQL reference returns NULL. REGR_SXX/SYY use the same
+    // complete-pair population as CORR, unlike variance over either raw column.
+    // Guard finite complete pairs only: a non-finite source observation must
+    // retain the source's NaN/error behavior, including singleton inputs.
+    templates.functions.CORRELATION = 'CASE WHEN BOOL_AND(ISFINITE({{ args[0] }}) AND ISFINITE({{ args[1] }})) ' +
+      'FILTER (WHERE {{ args[0] }} IS NOT NULL AND {{ args[1] }} IS NOT NULL) ' +
+      'AND (REGR_SXX({{ args_concat }}) = 0 OR REGR_SYY({{ args_concat }}) = 0) THEN NULL ELSE CORR({{ args_concat }}) END';
     templates.functions.STRING_AGG = 'STRING_AGG({% if distinct %}DISTINCT {% endif %}{{ args[0] }}, COALESCE({{ args[1] }}, \'\'))';
     // DATEADD is being rewritten to DATE_ADD
     templates.functions.DATE_ADD = '({{ args[0] }} + \'{{ interval }} {{ date_part }}\'::interval)';
