@@ -7302,7 +7302,7 @@ ORDER BY
                         "expr": {
                             "type": "SqlFunction",
                             "cubeParams": [],
-                            "sql": "0",
+                            "sql": "CAST(0.0 AS DOUBLE)",
                         },
                         "groupingSet": null,
                     })
@@ -7633,7 +7633,7 @@ ORDER BY "source"."str0" ASC
         assert_eq!(
             member_expression_sql(&request.dimensions),
             [
-                "((FLOOR(((${KibanaSampleDataEcommerce.taxful_total_price} - 1.1) / 0.025)) * 0.025) + 1.1)",
+                "((FLOOR(((${KibanaSampleDataEcommerce.taxful_total_price} - CAST(1.1 AS DOUBLE)) / CAST(0.025 AS DOUBLE))) * CAST(0.025 AS DOUBLE)) + CAST(1.1 AS DOUBLE))",
             ]
         );
     }
@@ -7845,7 +7845,7 @@ ORDER BY "source"."str0" ASC
         assert_eq!(
             member_expression_sql(&request.dimensions),
             [
-                "CEIL((CAST(EXTRACT(doy FROM CAST(${KibanaSampleDataEcommerce.order_date.week} AS TIMESTAMP)) AS INTEGER) / 7))",
+                "CEIL((CAST(EXTRACT(doy FROM CAST(${KibanaSampleDataEcommerce.order_date.week} AS TIMESTAMP)) AS INTEGER) / CAST(7.0 AS DOUBLE)))",
             ]
         );
     }
@@ -12082,7 +12082,7 @@ ORDER BY "source"."str0" ASC
         assert!(member_expression_sql(&request.measures).is_empty());
         assert_eq!(
             member_expression_sql(&request.dimensions),
-            ["(EXTRACT(day FROM ${KibanaSampleDataEcommerce.order_date}) = 15)",]
+            ["(EXTRACT(day FROM ${KibanaSampleDataEcommerce.order_date}) = CAST(15.0 AS DOUBLE))",]
         );
     }
 
@@ -12143,7 +12143,7 @@ ORDER BY "source"."str0" ASC
         assert_eq!(
             member_expression_sql(&request.dimensions),
             [
-                "(EXTRACT(month FROM ${KibanaSampleDataEcommerce.order_date}) < (EXTRACT(month FROM ${KibanaSampleDataEcommerce.last_mod}) + 1))",
+                "(EXTRACT(month FROM ${KibanaSampleDataEcommerce.order_date}) < (EXTRACT(month FROM ${KibanaSampleDataEcommerce.last_mod}) + CAST(1.0 AS DOUBLE)))",
             ]
         );
     }
@@ -12288,7 +12288,7 @@ ORDER BY "source"."str0" ASC
         assert!(member_expression_sql(&request.measures).is_empty());
         assert_eq!(
             member_expression_sql(&request.dimensions),
-            ["(${KibanaSampleDataEcommerce.taxful_total_price} > 10)",]
+            ["(${KibanaSampleDataEcommerce.taxful_total_price} > CAST(10.0 AS DOUBLE))",]
         );
     }
 
@@ -18624,6 +18624,14 @@ LIMIT {{ limit }}{% endif %}"#.to_string(),
                         or: None,
                         and: None,
                     },
+                    // SQL != excludes NULL even though Cube notEquals includes it.
+                    V1LoadRequestQueryFilterItem {
+                        member: Some("KibanaSampleDataEcommerce.id".to_string()),
+                        operator: Some("set".to_string()),
+                        values: None,
+                        or: None,
+                        and: None,
+                    },
                     V1LoadRequestQueryFilterItem {
                         member: Some("KibanaSampleDataEcommerce.customer_gender".to_string()),
                         operator: Some("set".to_string()),
@@ -18689,6 +18697,14 @@ LIMIT {{ limit }}{% endif %}"#.to_string(),
                         member: Some("KibanaSampleDataEcommerce.id".to_string()),
                         operator: Some("notEquals".to_string()),
                         values: Some(vec!["0".to_string()]),
+                        or: None,
+                        and: None,
+                    },
+                    // SQL != excludes NULL even though Cube notEquals includes it.
+                    V1LoadRequestQueryFilterItem {
+                        member: Some("KibanaSampleDataEcommerce.id".to_string()),
+                        operator: Some("set".to_string()),
+                        values: None,
                         or: None,
                         and: None,
                     },

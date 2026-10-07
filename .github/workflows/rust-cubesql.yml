@@ -134,7 +134,7 @@ jobs:
         # compare strictly in this intentionally restricted unit-test selection.
         run: cargo insta test --all-features --workspace --lib --bins --unreferenced ignore
       - name: Offline Tesseract unit tests (candidate)
-        if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/heads/codex/') }}
+        if: ${{ !cancelled() && github.event_name == 'push' && startsWith(github.ref, 'refs/heads/codex/') }}
         run: cargo test --locked --manifest-path rust/cube/Cargo.toml --workspace --lib --bins -j 4
       - name: Upload code coverage
         if: ${{ github.event_name != 'push' || !startsWith(github.ref, 'refs/heads/codex/') }}

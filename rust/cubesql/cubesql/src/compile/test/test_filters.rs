@@ -280,6 +280,15 @@ LIMIT 5000
                     or: None,
                     and: None,
                 },
+                // The inequality's NULL guard stays with its own predicate,
+                // independently of the preceding explicit IS NOT NULL.
+                V1LoadRequestQueryFilterItem {
+                    member: Some("KibanaSampleDataEcommerce.sumPrice".to_string()),
+                    operator: Some("set".to_string()),
+                    values: None,
+                    or: None,
+                    and: None,
+                },
             ]),
             ..Default::default()
         }
