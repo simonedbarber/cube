@@ -239,11 +239,14 @@ impl PhysicalPlanBuilder {
             // correct processing of order by dimension that is not included in the
             // selection list will be implemented
             if positions.is_empty() && o.member_symbol().is_measure() {
-                result.push(OrderBy::new(
-                    Expr::Member(MemberExpression::new(o.member_symbol())),
-                    0,
-                    o.desc(),
-                ).with_nulls_first(o.nulls_first()));
+                result.push(
+                    OrderBy::new(
+                        Expr::Member(MemberExpression::new(o.member_symbol())),
+                        0,
+                        o.desc(),
+                    )
+                    .with_nulls_first(o.nulls_first()),
+                );
             } else {
                 for position in positions {
                     // Use the symbol from schema at the found position instead of
@@ -252,11 +255,14 @@ impl PhysicalPlanBuilder {
                     let symbol = logical_schema
                         .get_member_at_position(position)
                         .unwrap_or_else(|| o.member_symbol());
-                    result.push(OrderBy::new(
-                        Expr::Member(MemberExpression::new(symbol)),
-                        position + 1,
-                        o.desc(),
-                    ).with_nulls_first(o.nulls_first()));
+                    result.push(
+                        OrderBy::new(
+                            Expr::Member(MemberExpression::new(symbol)),
+                            position + 1,
+                            o.desc(),
+                        )
+                        .with_nulls_first(o.nulls_first()),
+                    );
                 }
             }
         }

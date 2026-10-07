@@ -613,11 +613,25 @@ mod session_preference_tests {
         assert!(!post_processing_preference(None).unwrap());
         assert!(!post_processing_preference(Some(ScalarValue::Boolean(None))).unwrap());
         for value in [false, true] {
-            assert_eq!(post_processing_preference(Some(ScalarValue::Boolean(Some(value)))).unwrap(), value);
+            assert_eq!(
+                post_processing_preference(Some(ScalarValue::Boolean(Some(value)))).unwrap(),
+                value
+            );
         }
-        for (text, expected) in [("true", true), ("TRUE", true), ("on", true), ("1", true),
-            ("false", false), ("FALSE", false), ("off", false), ("0", false)] {
-            assert_eq!(post_processing_preference(Some(ScalarValue::Utf8(Some(text.into())))).unwrap(), expected);
+        for (text, expected) in [
+            ("true", true),
+            ("TRUE", true),
+            ("on", true),
+            ("1", true),
+            ("false", false),
+            ("FALSE", false),
+            ("off", false),
+            ("0", false),
+        ] {
+            assert_eq!(
+                post_processing_preference(Some(ScalarValue::Utf8(Some(text.into())))).unwrap(),
+                expected
+            );
         }
         assert!(post_processing_preference(Some(ScalarValue::Utf8(Some("maybe".into())))).is_err());
         assert!(post_processing_preference(Some(ScalarValue::Int64(Some(2)))).is_err());

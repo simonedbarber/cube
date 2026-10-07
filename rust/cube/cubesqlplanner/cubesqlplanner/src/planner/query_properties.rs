@@ -50,7 +50,9 @@ impl OrderByItem {
         self
     }
 
-    pub fn nulls_first(&self) -> Option<bool> { self.nulls_first }
+    pub fn nulls_first(&self) -> Option<bool> {
+        self.nulls_first
+    }
 
     pub fn name(&self) -> String {
         self.member_evaluator.full_name()
@@ -67,7 +69,9 @@ impl OrderByItem {
 
 impl PartialEq for OrderByItem {
     fn eq(&self, other: &Self) -> bool {
-        self.desc == other.desc && self.nulls_first == other.nulls_first && member_chain_eq(&self.member_evaluator, &other.member_evaluator)
+        self.desc == other.desc
+            && self.nulls_first == other.nulls_first
+            && member_chain_eq(&self.member_evaluator, &other.member_evaluator)
     }
 }
 

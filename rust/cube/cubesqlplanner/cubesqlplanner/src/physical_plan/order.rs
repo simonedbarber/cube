@@ -10,7 +10,12 @@ pub struct OrderBy {
 
 impl OrderBy {
     pub fn new(expr: Expr, pos: usize, desc: bool) -> OrderBy {
-        OrderBy { expr, pos, desc, nulls_first: None }
+        OrderBy {
+            expr,
+            pos,
+            desc,
+            nulls_first: None,
+        }
     }
 
     pub fn with_nulls_first(mut self, value: Option<bool>) -> Self {

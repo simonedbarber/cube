@@ -34,11 +34,14 @@ impl OrderPlanner {
                 .enumerate()
                 .filter(|(_, m)| m.full_name().to_lowercase() == itm.name().to_lowercase())
             {
-                result.push(OrderBy::new(
-                    Expr::Member(MemberExpression::new(found_item.1.clone())),
-                    found_item.0 + 1,
-                    itm.desc(),
-                ).with_nulls_first(itm.nulls_first()));
+                result.push(
+                    OrderBy::new(
+                        Expr::Member(MemberExpression::new(found_item.1.clone())),
+                        found_item.0 + 1,
+                        itm.desc(),
+                    )
+                    .with_nulls_first(itm.nulls_first()),
+                );
             }
         }
         result
