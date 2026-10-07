@@ -3124,11 +3124,11 @@ export class BaseQuery {
   }
 
   orderBy() {
-    if (this.order.some((term) => term.nullsFirst !== undefined)) {
-      throw new UserError('Explicit SQL null placement requires the native SQL planner.');
-    }
     if (R.isEmpty(this.order)) {
       return '';
+    }
+    if (this.order.some((term) => term.nullsFirst !== undefined)) {
+      throw new UserError('Explicit SQL null placement requires the native SQL planner.');
     }
 
     const orderByString = R.pipe(
@@ -4741,7 +4741,7 @@ export class BaseQuery {
         // Plain `/` is correct for dialects where int / int is integer division;
         // dialects with decimal or float `/` must override this template
         int_division: '({{ left }} / {{ right }})',
-        sort: '{{ expr }} {% if asc %}ASC{% else %}DESC{% endif %} NULLS {% if nulls_first %}FIRST{% else %}LAST{% endif %}',
+        sort: '{% if index %}{{ index }}{% else %}{{ expr }}{% endif %} {% if asc %}ASC{% else %}DESC{% endif %} NULLS {% if nulls_first %}FIRST{% else %}LAST{% endif %}',
         order_by: '{% if index %} {{ index }} {% else %} {{ expr }} {% endif %} {% if asc %}ASC{% else %}DESC{% endif %}{% if nulls_first %} NULLS FIRST{% endif %}',
         cast: 'CAST({{ expr }} AS {{ data_type }})',
         window_function: '{{ fun_call }} OVER ({% if partition_by_concat %}PARTITION BY {{ partition_by_concat }}{% if order_by_concat or window_frame %} {% endif %}{% endif %}{% if order_by_concat %}ORDER BY {{ order_by_concat }}{% if window_frame %} {% endif %}{% endif %}{% if window_frame %}{{ window_frame }}{% endif %})',

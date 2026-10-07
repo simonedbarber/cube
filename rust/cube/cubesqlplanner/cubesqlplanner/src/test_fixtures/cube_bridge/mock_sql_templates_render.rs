@@ -283,7 +283,7 @@ impl MockSqlTemplatesRender {
             "expressions/binary".to_string(),
             "({{ left }} {{ op }} {{ right }})".to_string(),
         );
-        templates.insert("expressions/sort".to_string(), "{{ expr }} {% if asc %}ASC{% else %}DESC{% endif %} NULLS {% if nulls_first %}FIRST{% else %}LAST{% endif %}".to_string());
+        templates.insert("expressions/sort".to_string(), "{% if index %}{{ index }}{% else %}{{ expr }}{% endif %} {% if asc %}ASC{% else %}DESC{% endif %} NULLS {% if nulls_first %}FIRST{% else %}LAST{% endif %}".to_string());
         templates.insert("expressions/order_by".to_string(), "{% if index %} {{ index }} {% else %} {{ expr }} {% endif %} {% if asc %}ASC{% else %}DESC{% endif %}{% if nulls_first %} NULLS FIRST{% endif %}".to_string());
         templates.insert(
             "expressions/cast".to_string(),

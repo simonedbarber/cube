@@ -250,7 +250,11 @@ export class QueryQueue {
       // query (initialized by the /cubejs-system/v1/pre-aggregations/jobs
       // endpoint).
       let result = !query.forceBuild && await queueConnection.getResult(queryKey, options.externalId);
-      if (result && !result.streamResult) {
+      // A completed/abandoned source stream is not a reusable value. Its
+      // terminal error belongs to the requesting execution, just like the
+      // successful stream marker. Keep same-request error polling intact.
+      if (result && !result.streamResult &&
+          (queryHandler !== 'stream' || result.streamRequestId === options.externalId)) {
         return this.parseResult(result);
       }
 
@@ -1000,7 +1004,8 @@ export class QueryQueue {
         });
       } catch (e: any) {
         executionResult = {
-          error: (e.message || e).toString() // TODO error handling
+          error: (e.message || e).toString(), // TODO error handling
+          ...(query.queryHandler === 'stream' ? { streamRequestId: query.requestId ? extractRequestUUID(query.requestId) : undefined } : {}),
         };
         this.logger('Error while querying', {
           queueId,

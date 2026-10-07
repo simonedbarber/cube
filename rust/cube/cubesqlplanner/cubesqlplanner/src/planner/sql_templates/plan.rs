@@ -292,15 +292,22 @@ impl PlanSqlTemplates {
         nulls_first: Option<bool>,
     ) -> Result<String, CubeError> {
         if let Some(nulls_first) = nulls_first {
-            // Use the complete driver sort renderer: some dialects emulate
-            // placement with adjacent keys. Never put an ordinal into CASE.
+            // Drivers may use the selected-column position for the value key,
+            // including constant masks. Emulated null discriminators still use
+            // the expression: an ordinal inside CASE would be a constant.
             let template = self.render.get_template("expressions/sort")?;
             if !template.contains("nulls_first") {
-                return Err(CubeError::user("The driver cannot preserve SQL null placement".to_string()));
+                return Err(CubeError::user(
+                    "The driver cannot preserve SQL null placement".to_string(),
+                ));
             }
-            return self.render.render_template("expressions/sort", context! {
-                expr => expr, asc => asc, nulls_first => nulls_first
-            });
+            return self.render.render_template(
+                "expressions/sort",
+                context! {
+                    expr => expr, index => index.filter(|position| *position > 0),
+                    asc => asc, nulls_first => nulls_first
+                },
+            );
         }
         self.render.render_template(
             "expressions/order_by",
@@ -1043,7 +1050,6 @@ mod tests {
     }
 }
 
-
 #[cfg(test)]
 mod sql_null_order_tests {
     use super::*;
@@ -1054,20 +1060,73 @@ mod sql_null_order_tests {
         let templates = PlanSqlTemplates::try_new(Rc::new(MockDriverTools::new()), false).unwrap();
         for asc in [true, false] {
             for first in [true, false] {
-                let rendered = templates.order_by("SUM(amount)", Some(2), asc, Some(first)).unwrap();
-                assert_eq!(rendered, format!("SUM(amount) {} NULLS {}", if asc { "ASC" } else { "DESC" }, if first { "FIRST" } else { "LAST" }));
+                let rendered = templates
+                    .order_by("SUM(amount)", Some(2), asc, Some(first))
+                    .unwrap();
+                assert_eq!(
+                    rendered,
+                    format!(
+                        "2 {} NULLS {}",
+                        if asc { "ASC" } else { "DESC" },
+                        if first { "FIRST" } else { "LAST" }
+                    )
+                );
             }
         }
+        for position in [None, Some(0)] {
+            assert_eq!(
+                templates
+                    .order_by("SUM(amount)", position, true, Some(false))
+                    .unwrap(),
+                "SUM(amount) ASC NULLS LAST"
+            );
+        }
+        assert_eq!(
+            templates
+                .order_by("'MASKED'", Some(2), true, Some(false))
+                .unwrap(),
+            "2 ASC NULLS LAST"
+        );
         let mut emulated = templates.clone();
         let mut map = std::collections::HashMap::new();
-        map.insert("expressions/sort".to_string(), "{{ expr }} IS NULL {% if nulls_first %}DESC{% else %}ASC{% endif %}, {{ expr }} {% if asc %}ASC{% else %}DESC{% endif %}".to_string());
-        emulated.render = Rc::new(crate::test_fixtures::cube_bridge::MockSqlTemplatesRender::try_new(map).unwrap());
-        assert_eq!(emulated.order_by("SUM(amount)", Some(2), false, Some(false)).unwrap(), "SUM(amount) IS NULL ASC, SUM(amount) DESC");
+        map.insert("expressions/sort".to_string(), "{{ expr }} IS NULL {% if nulls_first %}DESC{% else %}ASC{% endif %}, {% if index %}{{ index }}{% else %}{{ expr }}{% endif %} {% if asc %}ASC{% else %}DESC{% endif %}".to_string());
+        emulated.render = Rc::new(
+            crate::test_fixtures::cube_bridge::MockSqlTemplatesRender::try_new(map).unwrap(),
+        );
+        assert_eq!(
+            emulated
+                .order_by("SUM(amount)", Some(2), false, Some(false))
+                .unwrap(),
+            "SUM(amount) IS NULL ASC, 2 DESC"
+        );
+        assert_eq!(
+            emulated
+                .order_by("'MASKED'", Some(2), true, Some(true))
+                .unwrap(),
+            "'MASKED' IS NULL DESC, 2 ASC"
+        );
+        assert_eq!(
+            emulated
+                .order_by("SUM(amount)", None, false, Some(false))
+                .unwrap(),
+            "SUM(amount) IS NULL ASC, SUM(amount) DESC"
+        );
         let mut stripped = std::collections::HashMap::new();
         stripped.insert("expressions/sort".to_string(), "{{ expr }} ASC".to_string());
-        emulated.render = Rc::new(crate::test_fixtures::cube_bridge::MockSqlTemplatesRender::try_new(stripped).unwrap());
-        assert!(emulated.order_by("SUM(amount)", Some(2), true, Some(true)).is_err());
+        emulated.render = Rc::new(
+            crate::test_fixtures::cube_bridge::MockSqlTemplatesRender::try_new(stripped).unwrap(),
+        );
+        assert!(emulated
+            .order_by("SUM(amount)", Some(2), true, Some(true))
+            .is_err());
         // REST omission retains the established ordinal and backend default.
-        assert_eq!(templates.order_by("SUM(amount)", Some(2), true, None).unwrap().split_whitespace().collect::<Vec<_>>(), vec!["2", "ASC"]);
+        assert_eq!(
+            templates
+                .order_by("SUM(amount)", Some(2), true, None)
+                .unwrap()
+                .split_whitespace()
+                .collect::<Vec<_>>(),
+            vec!["2", "ASC"]
+        );
     }
 }

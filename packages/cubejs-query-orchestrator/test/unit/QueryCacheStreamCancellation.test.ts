@@ -28,9 +28,9 @@ function startQueue(factory: () => Promise<BaseDriver> | BaseDriver) {
   });
   const key: QueryKey = ['select streamed', []];
   key.persistent = true;
-  const start = () => queue.executeInQueue('stream', key, {
-    queryKey: key, query: 'select streamed', values: [], requestId: 'stream-cancel-request',
-  }, 0, { requestId: 'stream-cancel-request' });
+  const start = (requestId = 'stream-cancel-request') => queue.executeInQueue('stream', key, {
+    queryKey: key, query: 'select streamed', values: [], requestId,
+  }, 0, { requestId });
   return { queue, start, completed, logger };
 }
 
@@ -106,6 +106,46 @@ describe('QueryCache source stream cancellation', () => {
     expect(rows).toEqual([{ id: 1 }, { id: 2 }]);
     expect(signal!.aborted).toBe(false);
     expect(release).toHaveBeenCalledTimes(1);
+  });
+
+  test('a fresh execution after cancellation opens a fresh source stream', async () => {
+    const driver = new StreamingDriver();
+    const issued = deferred<AbortSignal>();
+    driver.stream.mockImplementationOnce((_query, _values, { signal }) => new Promise((_resolve, reject) => {
+      issued.resolve(signal!);
+      signal!.addEventListener('abort', () => reject(signal!.reason), { once: true });
+    })).mockResolvedValueOnce({ rowStream: Readable.from([]), types: [], release: async () => undefined });
+    const { queue, start, completed } = startQueue(() => driver);
+    const cancelled = await start('11111111-1111-4111-8111-111111111111-span-1');
+    await issued.promise;
+    cancelled.destroy();
+    await completed.promise;
+    expect(cancelled.destroyed).toBe(true);
+    await queue.shutdown();
+    const fresh = await start('22222222-2222-4222-8222-222222222222-span-1');
+    const rows = [];
+
+    for await (const row of fresh) rows.push(row);
+    expect(rows).toEqual([]);
+    expect(driver.stream).toHaveBeenCalledTimes(2);
+    await queue.shutdown();
+  });
+
+  test('same-request polling retains the terminal source error', async () => {
+    const driver = new StreamingDriver();
+    const issued = deferred<AbortSignal>();
+    driver.stream.mockImplementation((_query, _values, { signal }) => new Promise((_resolve, reject) => {
+      issued.resolve(signal!);
+      signal!.addEventListener('abort', () => reject(signal!.reason), { once: true });
+    }));
+    const { queue, start, completed } = startQueue(() => driver);
+    const target = await start('33333333-3333-4333-8333-333333333333-span-1');
+    await issued.promise;
+    target.destroy();
+    await completed.promise;
+    await queue.shutdown();
+    await expect(start('33333333-3333-4333-8333-333333333333-span-2')).rejects.toThrow('SQL stream cancelled');
+    expect(driver.stream).toHaveBeenCalledTimes(1);
   });
 
   test('cleans up a completed stream when driver release fails', async () => {

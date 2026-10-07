@@ -112,7 +112,7 @@ describe('MssqlQuery', () => {
     // The discriminator's direction depends on null placement, independently
     // of the value's direction. NULL maps to 1, so DESC puts NULLs first.
     expect(sort).toContain('END {% if nulls_first %}DESC{% else %}ASC{% endif %},');
-    expect(sort).toContain('{{ expr }} {% if asc %}ASC{% else %}DESC{% endif %}');
+    expect(sort).toContain('{% if index %}{{ index }}{% else %}{{ expr }}{% endif %} {% if asc %}ASC{% else %}DESC{% endif %}');
   });
 
   it('should group by the created_at field on the calculated granularity for unbounded trailing windows',
@@ -175,6 +175,18 @@ describe('MssqlQuery', () => {
       // calculated-granularity expression (legacy used a time-series CTE alias).
       expect(queryString).toContain('GROUP BY "visitors".source, dateadd(week, DATEDIFF(week, 0, CAST("visitors".created_at AT TIME ZONE \'UTC\' AT TIME ZONE \'Pacific Standard Time\' AS DATETIME2)), 0)');
     }));
+
+  it.each([true, false])('legacy SQL refuses explicit null placement (%s)', async nullsFirst => {
+    await compiler.compile();
+
+    const query = new MssqlQuery({ joinGraph, cubeEvaluator, compiler }, {
+      measures: ['visitors.count'],
+      dimensions: ['visitors.source'],
+      order: [{ id: 'visitors.source', desc: false, nullsFirst }],
+      useNativeSqlPlanner: false,
+    });
+    expect(() => query.buildSqlAndParams()).toThrow('Explicit SQL null placement requires the native SQL planner.');
+  });
 
   it('should not include order by clauses in subqueries',
     () => compiler.compile().then(() => {

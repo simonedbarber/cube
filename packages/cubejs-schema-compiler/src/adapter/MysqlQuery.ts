@@ -227,7 +227,7 @@ export class MysqlQuery extends BaseQuery {
     templates.quotes.identifiers = '`';
     templates.quotes.escape = '\\`';
     // NOTE: this template contains a comma; two order expressions are being generated
-    templates.expressions.sort = '{{ expr }} IS NULL {% if nulls_first %}DESC{% else %}ASC{% endif %}, {{ expr }} {% if asc %}ASC{% else %}DESC{% endif %}';
+    templates.expressions.sort = '{{ expr }} IS NULL {% if nulls_first %}DESC{% else %}ASC{% endif %}, {% if index %}{{ index }}{% else %}{{ expr }}{% endif %} {% if asc %}ASC{% else %}DESC{% endif %}';
     // MySQL `/` returns DECIMAL even for integer operands; DIV discards the
     // fractional part (truncation toward zero), matching PostgreSQL (-5 DIV 2 = -2)
     templates.expressions.int_division = '({{ left }} DIV {{ right }})';

@@ -6,6 +6,8 @@ import { DuckDBInstance } from '@duckdb/node-api';
 import { CompilerApi, type CompilerApiOptions } from '@cubejs-backend/server-core';
 import { ApiGateway, CubejsHandlerError } from '@cubejs-backend/api-gateway';
 import { AdapterApiMock, DataSourceStorageMock } from '@cubejs-backend/api-gateway/dist/test/mocks';
+import { BaseDriver, type QueryKey } from '@cubejs-backend/base-driver';
+import { QueryCache, QueryQueue } from '@cubejs-backend/query-orchestrator';
 import { QueryStream } from '@cubejs-backend/query-orchestrator/dist/src/orchestrator/QueryStream';
 import type { QueryBody } from '@cubejs-backend/query-orchestrator/dist/src/orchestrator/QueryCache';
 import type { PostgresDriver } from '@cubejs-backend/postgres-driver';
@@ -44,6 +46,8 @@ type EndpointOptions = {
   /** Owned production driver. No setup SQL runs on this source. */
   sourceDriver?: EndpointSourceDriver;
   sourceDialect?: 'postgres' | 'duckdb';
+  /** Exercise actual source stream queuing/cancellation on an owned driver. */
+  queueSourceStreams?: boolean;
   /** Trusted fixture projections consumed by the actual compiled policies. */
   securityContexts?: ReadonlyMap<string, Record<string, unknown>>;
   /** Owned compile callback context; query authority remains per request. */
@@ -52,13 +56,15 @@ type EndpointOptions = {
 
 /** Source-owned numerical HTTP fixture. Policies, parser, planner and driver
  * value/stream conversion use their actual implementations. Only orchestrator
- * scheduling/cache and application authority are outside this fixture. */
+ * scheduling/cache are outside this fixture unless queueSourceStreams is
+ * enabled. Application authority remains outside the fixture. */
 export async function startSemanticSqlEndpoint(options: EndpointOptions) {
   // Jest virtualizes process.env; changing it here does not change the Rust
   // addon's OS environment. Select native streaming before launching Jest.
   if (options.streamMode !== undefined && (process.env.CUBESQL_STREAM_MODE === 'true') !== options.streamMode) {
     throw new Error(`Launch Jest with CUBESQL_STREAM_MODE=${options.streamMode}`);
   }
+  const urlSafePrefix = () => Math.random().toString(36).slice(2);
   const savedEnvironment = new Map(['CUBE_JS_NATIVE_API_GATEWAY_INTERNAL']
     .map(name => [name, process.env[name]]));
   process.env.CUBE_JS_NATIVE_API_GATEWAY_INTERNAL = 'false';
@@ -68,6 +74,7 @@ export async function startSemanticSqlEndpoint(options: EndpointOptions) {
   const logs: unknown[] = [];
   const streams = new Set<Readable>();
   const sourceReleases = new Set<Promise<void>>();
+  const sourceQueues = new Map<string, QueryQueue>();
   let gateway: ApiGateway | undefined;
   let compiler: CompilerApi | undefined;
   let server: Server | undefined;
@@ -92,6 +99,8 @@ export async function startSemanticSqlEndpoint(options: EndpointOptions) {
       });
       await Promise.allSettled(closing);
       await Promise.all([...sourceReleases]);
+
+      for (const queue of sourceQueues.values()) { while (await queue.shutdown()) { /* drain owned work */ } }
       gateway?.release();
       compiler?.dispose();
       await options.sourceDriver?.release();
@@ -158,6 +167,28 @@ export async function startSemanticSqlEndpoint(options: EndpointOptions) {
       public async streamQuery(query: SourceQuery) {
         const observed = this.observe(query, true);
         if (options.sourceDriver) {
+          if (options.queueSourceStreams) {
+            if (!(options.sourceDriver instanceof BaseDriver)) throw new Error('Source queue fixture requires an owned BaseDriver');
+            const { principal } = query.context.securityContext;
+            let queue = sourceQueues.get(principal);
+            if (!queue) {
+              const driver = options.sourceDriver;
+              queue = QueryCache.createQueue(`endpoint-source-${principal}-${urlSafePrefix()}`, () => driver, () => [], {
+                cacheAndQueueDriver: 'memory', logger: (event, properties) => logs.push({ event, properties }),
+              });
+              sourceQueues.set(principal, queue);
+            }
+            const key: QueryKey = [query.query, query.values];
+            key.persistent = true;
+            const target = await queue.executeInQueue('stream', key, { ...query, queryKey: key }, 0, { requestId: query.requestId }) as QueryStream;
+            const counted = new Transform({ objectMode: true, transform(row, encoding, callback) { observed.columns ??= Object.keys(row); observed.rowCount++; callback(null, row); } });
+            streams.add(target); streams.add(counted);
+            counted.once('end', () => { observed.completed = true; });
+            target.once('close', () => streams.delete(target));
+            counted.once('close', () => streams.delete(counted));
+            pipeline(target, counted).catch(error => counted.destroy(error));
+            return counted;
+          }
           const sourceResult = await options.sourceDriver.stream(query.query, query.values, { highWaterMark: 16 });
           if (!(sourceResult.rowStream instanceof Readable)) throw new Error('The source driver returned no owned readable stream');
           const sourceStream = sourceResult.rowStream;
