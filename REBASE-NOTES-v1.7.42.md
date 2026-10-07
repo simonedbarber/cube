@@ -1,10 +1,33 @@
 # Fork rebase notes — upstream v1.7.42
 
-Branch: `codex/rebase-v1.7.42-clean`
+Initial rebase branch: `codex/rebase-v1.7.42-clean`
 Base tag: **v1.7.42** (`919434f42b50183179e97d1eed85696bafb05ae2`, 2026-09-18) — the
-latest upstream release tag; no `v1.8.x` exists.
+upstream base selected for that rebase.
 Previous fork branch: `codex/rebase-v1.7.26-clean` (`672620b1b9`), 19 linear commits
 on top of v1.7.26.
+
+## Query operations runtime additions
+
+The rebase inventory below describes the initial v1.7.42 cherry-pick, before
+`codex/query-operations-runtime`. Its runtime source batch at `dcc1c8cfae` additionally
+carries Rust/native changes: governed joined-input policy placement and policy
+origins, regular/wrapped null placement and ordinal ordering, cancellation
+through native execution, exact decimal decoding and rejection of incomplete
+row-cap results. DuckDB undefined finite correlations return NULL. The driver
+also loads spatial support; loading it is not proof of tenant sandbox isolation.
+
+The native and CubeSQL Cargo locks use the QueryRails Arrow DataFusion fork at
+`6cd1cbd1e7e9d869d351774af189d8dfdc859a85`. That is a separately maintained
+source dependency, not an upstream DataFusion release. A future Cube rebase
+must review the CubeSQL/native deltas and this dependency together, rebuild
+the Linux native addon, run Rust and driver tests, and recapture semantic
+endpoint evidence against the resulting immutable image. Compiling or
+smoke-loading an addon does not qualify these changed SQL behaviors.
+
+The image at `dcc1c8cfae` has native/package smoke evidence. Earlier numerical
+captures retain their historical identities; current-image and consumer
+qualification remain required. No claim in the initial inventory below makes
+those later runtime changes qualified.
 
 ## Method: cherry-pick, not rebase
 
@@ -38,8 +61,9 @@ Plus `style(qr)` (oxlint) and a `docs(schema-compiler)` correction to
   (`agg_fun_expr_var_arg`, plus `wrapper-{push-down,pull-up}-aggregate-function-args`
   and the empty-tail rule) in `rules/wrapper/aggregate_function.rs`, with
   `test_wrapper_multi_arg_aggregate_function` as coverage. The fork's two-arg
-  special case is strictly subsumed. **The fork now has no Rust source delta at
-  all** — only two test files in `cubesqlplanner/src/tests/`.
+  special case is strictly subsumed. At the initial rebase point there was no
+  Rust source delta, only two test files in `cubesqlplanner/src/tests/`. The
+  later query-operations runtime deltas are listed above.
 - `21446947df`, `31a35a28de`, `97263ecb4f`, and the dependency half of `7023bec8f9`
   — the `@duckdb/node-api` (neo) port of the DuckDB driver and its test suite.
   Upstream absorbed the port as #11910 (v1.7.41) and pins

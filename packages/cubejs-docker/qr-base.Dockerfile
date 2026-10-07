@@ -3,6 +3,10 @@
 # Builds the QueryRails cube fork's customizations and overlays the compiled native and JS
 # artifacts onto the official cube image, so a single image carries:
 #   - qualified CubeSQL filter bindings that preserve dotted output aliases
+#   - governed joined-input policy placement and preserved policy origins
+#   - regular/wrapped null placement, ordinal ordering and native cancellation
+#   - exact decimal decoding and incomplete row-cap result rejection
+#   - DuckDB NULL results for undefined finite correlations and spatial loading
 #   - the SQL function-template dead-key fix + per-dialect overrides
 #     (schema-compiler + druid/firebolt/pinot/ksql query dialects)
 #   - number_agg measures without multi_stage (schema-compiler CubeValidator)
@@ -12,6 +16,9 @@
 #
 # Fork tracks upstream v1.7.42. QueryRails keeps only the custom behaviour that
 # remains absent upstream, and qualifies the complete rebased image by digest.
+# Rust/native and the QueryRails Arrow DataFusion dependency are carried source
+# deltas. Building this image does not replace numerical endpoint qualification;
+# historical captures retain the digest on which they actually ran.
 #
 # The official image downloads upstream's native addon. Compile the fork's
 # native addon here so Rust CubeSQL fixes are included alongside the JS changes.
