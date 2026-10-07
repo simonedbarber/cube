@@ -2,7 +2,7 @@ name: Lint CI Workflows
 
 on:
   push:
-    branches: [ master ]
+    branches: [ master, 'codex/**' ]
     paths:
       - .github/workflows/**
   pull_request:
