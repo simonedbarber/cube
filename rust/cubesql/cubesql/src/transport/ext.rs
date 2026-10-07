@@ -53,7 +53,7 @@ pub(super) fn numeric_result_type(
             precision,
             scale,
             arithmetic,
-        } if arithmetic == "exact" && precision >= 1 && precision <= 38 && scale <= precision => {
+        } if arithmetic == "exact" && (1..=38).contains(&precision) && scale <= precision => {
             Ok(Some(ColumnType::Decimal(precision, scale)))
         }
         NumericResultDeclaration::Integer {

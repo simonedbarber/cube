@@ -327,10 +327,9 @@ impl CubeScanWrappedSqlNode {
                     scan.request.limit.map(|limit| limit.max(0) as usize)
                 } else if let Some(select) = node.as_any().downcast_ref::<WrappedSelectNode>() {
                     select.limit
-                } else if let Some(union) = node.as_any().downcast_ref::<WrappedUnionNode>() {
-                    union.limit
                 } else {
-                    return None;
+                    let union = node.as_any().downcast_ref::<WrappedUnionNode>()?;
+                    union.limit
                 }
             }
             _ => return None,

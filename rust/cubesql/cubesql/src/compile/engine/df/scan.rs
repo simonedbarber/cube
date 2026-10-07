@@ -2343,7 +2343,7 @@ mod uint64_response_tests {
         Arc::new(Schema::new(
             names
                 .iter()
-                .map(|name| datafusion::arrow::datatypes::Field::new(*name, DataType::UInt64, true))
+                .map(|name| datafusion::arrow::datatypes::Field::new(name, DataType::UInt64, true))
                 .collect::<Vec<_>>(),
         ))
     }
@@ -2351,7 +2351,7 @@ mod uint64_response_tests {
     #[test]
     fn uint64_response_preserves_four_row_number_columns_and_nulls() {
         let names = ["asc_first", "asc_last", "desc_first", "desc_last"];
-        let values = vec![
+        let values = [
             vec![1, 2, 3, 4],
             vec![4, 1, 2, 3],
             vec![1, 4, 3, 2],
