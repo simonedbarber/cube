@@ -12,7 +12,7 @@ homepage = "https://cube.dev"
 arc-swap = "1"
 # Exact literals/decimal arithmetic, cumulative ROWS and component/CTE binding
 # repairs are pinned for the coordinated QueryRails Cube fork image.
-datafusion = { git = 'https://github.com/simonedbarber/arrow-datafusion.git', rev = "6cd1cbd1e7e9d869d351774af189d8dfdc859a85", default-features = false, features = [
+datafusion = { git = 'https://github.com/simonedbarber/arrow-datafusion.git', rev = "4140a6ac1b334ffba43d2a2a48d67a2bd21805e6", default-features = false, features = [
     "regex_expressions",
     "unicode_expressions",
 ] }
