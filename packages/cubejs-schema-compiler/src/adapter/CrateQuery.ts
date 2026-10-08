@@ -2,6 +2,10 @@ import { PostgresQuery } from './PostgresQuery';
 import { UserError } from '../compiler/UserError';
 
 export class CrateQuery extends PostgresQuery {
+  public supportsCompositeKeyCount() {
+    return false;
+  }
+
   public hllInit(_sql): string {
     throw new UserError('Not implemented yet');
   }

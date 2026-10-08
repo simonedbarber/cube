@@ -3455,7 +3455,7 @@ export class BaseQuery {
           const evaluateSql = () => symbol.sql && this.evaluateSql(cubeName, symbol.sql) ||
             primaryKeys.length && (
               primaryKeys.length > 1 ?
-                this.concatStringsSql(primaryKeys.map((pk) => this.castToString(this.primaryKeySql(pk, cubeName))))
+                this.compositeKeySql(primaryKeys.map((pk) => this.primaryKeySql(pk, cubeName)))
                 : this.primaryKeySql(primaryKeys[0], cubeName)
             ) || '*';
           // For patched view measures (aggType is set), the view's sql resolves to
@@ -3701,6 +3701,19 @@ export class BaseQuery {
 
   autoPrefixAndEvaluateSql(cubeName, sql, isMemberExpr = false) {
     return this.autoPrefixWithCubeName(cubeName, this.evaluateSql(cubeName, sql), isMemberExpr);
+  }
+
+  supportsCompositeKeyCount() {
+    return false;
+  }
+
+  // Complete entity keys only: incomplete keys and absent outer-join rows
+  // remain NULL. Preserve each component's source type and tuple boundary.
+  compositeKeySql(keys) {
+    if (!this.supportsCompositeKeyCount()) {
+      throw new UserError('COMPOSITE_KEY_COUNT_UNSUPPORTED: automatic composite entity count requires a typed tuple dialect');
+    }
+    return `CASE WHEN ${keys.map(key => `(${key}) IS NOT NULL`).join(' AND ')} THEN ROW(${keys.join(', ')}) END`;
   }
 
   concatStringsSql(strings) {
@@ -4030,7 +4043,7 @@ export class BaseQuery {
   primaryKeyCount(cubeName, distinct) {
     const primaryKeys = this.cubeEvaluator.primaryKeys[cubeName];
     const primaryKeySql = primaryKeys.length > 1 ?
-      this.concatStringsSql(primaryKeys.map((pk) => this.castToString(this.primaryKeySql(pk, cubeName)))) :
+      this.compositeKeySql(primaryKeys.map((pk) => this.primaryKeySql(pk, cubeName))) :
       this.primaryKeySql(primaryKeys[0], cubeName);
     return `count(${distinct ? 'distinct ' : ''}${primaryKeySql})`;
   }
@@ -4762,6 +4775,9 @@ export class BaseQuery {
         like_escape: '{{ like_expr }} ESCAPE {{ escape_char }}',
         within_group: '{{ fun_sql }} WITHIN GROUP (ORDER BY {{ within_group_concat }})',
         concat_strings: '{{ strings | join(\' || \' ) }}',
+        ...(this.supportsCompositeKeyCount() ? {
+          composite_key: "CASE WHEN {% for key in keys %}({{ key }}) IS NOT NULL{% if not loop.last %} AND {% endif %}{% endfor %} THEN ROW({{ keys | join(', ') }}) END",
+        } : {}),
         wrap_segment_select: '{{ expr }}',
         wrap_segment_filter: '{{ expr }}',
         rolling_window_expr_timestamp_cast: '{{ value }}',

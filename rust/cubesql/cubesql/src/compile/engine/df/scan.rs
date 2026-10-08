@@ -1136,6 +1136,18 @@ fn response_decimal_literal(
     Ok(adjusted)
 }
 
+/// Preserve the nanosecond transport domain explicitly; a parseable source
+/// timestamp outside it is a failure, never a fabricated SQL NULL.
+fn response_timestamp_nanos(value: &str) -> std::result::Result<i64, CubeError> {
+    let timestamp = parse_date_str(value)?;
+    timestamp.and_utc().timestamp_nanos_opt().ok_or_else(|| {
+        CubeError::user(format!(
+            "TIMESTAMP_TRANSPORT_DOMAIN_UNSUPPORTED: source timestamp {} is outside the supported nanosecond range [1677-09-21T00:12:43.145224192Z, 2262-04-11T23:47:16.854775807Z]",
+            timestamp,
+        ))
+    })
+}
+
 // Body of `transform_response`: builds one Arrow column per schema field from a
 // `ColumnarValueObject`, fetching each column once via `ColumnarValueObject::column`.
 macro_rules! transform_response_body {
@@ -1324,17 +1336,7 @@ macro_rules! transform_response_body {
                         field_name,
                         {
                             (FieldValue::String(s), builder) => {
-                                let timestamp = parse_date_str(s.as_ref())?;
-                                // TODO switch parsing to microseconds
-                                if let Some(nanos) = timestamp.and_utc().timestamp_nanos_opt() {
-                                    builder.append_value(nanos)?;
-                                } else {
-                                    log::error!(
-                                        "Unable to cast timestamp value to nanoseconds: {}",
-                                        timestamp
-                                    );
-                                    builder.append_null()?;
-                                }
+                                builder.append_value(response_timestamp_nanos(s.as_ref())?)?;
                             },
                         },
                         {
@@ -2600,5 +2602,71 @@ mod numeric_result_response_tests {
         assert!(response_decimal_literal(123, 2, 3, 1).is_err());
         assert!(response_decimal_literal(999, 0, 3, 1).is_err());
         assert!(response_decimal_literal(i128::MAX, 0, 38, 9).is_err());
+    }
+}
+
+#[cfg(test)]
+mod timestamp_domain_response_tests {
+    use super::*;
+    use datafusion::arrow::{
+        array::{Array, TimestampNanosecondArray},
+        datatypes::Field,
+    };
+
+    fn decode(values: Vec<Value>) -> std::result::Result<RecordBatch, CubeError> {
+        let mut response =
+            JsonColumnarValueObject::try_new(vec!["event_time".to_string()], vec![values]).unwrap();
+        let schema = Arc::new(Schema::new(vec![Field::new(
+            "event_time",
+            DataType::Timestamp(TimeUnit::Nanosecond, None),
+            true,
+        )]));
+        transform_response(
+            &mut response,
+            schema,
+            &vec![MemberField::regular("event_time".to_string())],
+        )
+    }
+
+    #[test]
+    fn timestamp_response_retains_exact_domain_boundaries_and_real_null() {
+        let batch = decode(vec![
+            serde_json::json!("1677-09-21T00:12:43.145224192"),
+            serde_json::json!("2262-04-11T23:47:16.854775807"),
+            Value::Null,
+        ])
+        .unwrap();
+        let values = batch
+            .column(0)
+            .as_any()
+            .downcast_ref::<TimestampNanosecondArray>()
+            .unwrap();
+        assert_eq!(values.value(0), i64::MIN);
+        assert_eq!(values.value(1), i64::MAX);
+        assert!(values.is_null(2));
+        assert_eq!(values.null_count(), 1);
+    }
+
+    #[test]
+    fn timestamp_response_refuses_old_future_and_adjacent_out_of_range_values() {
+        for value in [
+            "1500-01-01T00:00:00",
+            "2300-01-01T00:00:00",
+            "1677-09-21T00:12:43.145224191",
+            "2262-04-11T23:47:16.854775808",
+        ] {
+            // Even a previously decoded valid cell must not yield a successful
+            // partially NULL batch when the next source coordinate overflows.
+            let error = decode(vec![
+                serde_json::json!("2026-01-01T00:00:00"),
+                serde_json::json!(value),
+                Value::Null,
+            ])
+            .unwrap_err();
+            let message = error.to_string();
+            assert!(message.contains("TIMESTAMP_TRANSPORT_DOMAIN_UNSUPPORTED"));
+            assert!(message.contains("1677-09-21T00:12:43.145224192Z"));
+            assert!(message.contains("2262-04-11T23:47:16.854775807Z"));
+        }
     }
 }

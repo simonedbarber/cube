@@ -8,14 +8,11 @@ impl ToSql for CountMeasure {
             CountSql::Explicit(sql) => ctx.eval_sql_call(sql),
             CountSql::Auto(pk_sqls) => {
                 if pk_sqls.len() > 1 {
-                    let pk_strings = pk_sqls
+                    let keys = pk_sqls
                         .iter()
-                        .map(|pk| -> Result<_, CubeError> {
-                            let res = ctx.eval_sql_call(pk)?;
-                            ctx.templates.cast_to_string(&res)
-                        })
+                        .map(|pk| ctx.eval_sql_call(pk))
                         .collect::<Result<Vec<_>, _>>()?;
-                    ctx.templates.concat_strings(&pk_strings)
+                    ctx.templates.composite_key(&keys)
                 } else if let Some(pk_sql) = pk_sqls.first() {
                     ctx.eval_sql_call(pk_sql)
                 } else {

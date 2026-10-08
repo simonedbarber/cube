@@ -349,6 +349,10 @@ impl MockSqlTemplatesRender {
             "{{ fun_sql }} WITHIN GROUP (ORDER BY {{ within_group_concat }})".to_string(),
         );
         templates.insert(
+            "expressions/composite_key".to_string(),
+            "CASE WHEN {% for key in keys %}({{ key }}) IS NOT NULL{% if not loop.last %} AND {% endif %}{% endfor %} THEN ROW({{ keys | join(', ') }}) END".to_string(),
+        );
+        templates.insert(
             "expressions/concat_strings".to_string(),
             "{{ strings | join(' || ' ) }}".to_string(),
         );
@@ -603,6 +607,8 @@ impl MockSqlTemplatesRender {
     /// schema-compiler: BaseQuery defaults plus CubeStore-specific overrides.
     pub fn cubestore_templates() -> Self {
         let mut templates = Self::default_templates_map();
+        // Only explicitly opted-in source dialects advertise typed key tuples.
+        templates.remove("expressions/composite_key");
         // CubeStoreQuery keeps the base dialect's positional `?` params.
         templates.insert("params/param".to_string(), "?".to_string());
         templates.insert(

@@ -20,6 +20,10 @@ class PostgresParamAllocator extends ParamAllocator {
 }
 
 export class PostgresQuery extends BaseQuery {
+  public supportsCompositeKeyCount() {
+    return true;
+  }
+
   public newParamAllocator(expressionParams) {
     return new PostgresParamAllocator(expressionParams);
   }

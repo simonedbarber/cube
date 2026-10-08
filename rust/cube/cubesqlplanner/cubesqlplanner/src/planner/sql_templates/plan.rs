@@ -367,6 +367,18 @@ impl PlanSqlTemplates {
             .render_template("functions/MIN", context! { args_concat => expr })
     }
 
+    /// A typed tuple with the complete-primary-key NULL policy. Unsupported
+    /// dialects refuse this automatic count shape rather than concatenate keys.
+    pub fn composite_key(&self, keys: &[String]) -> Result<String, CubeError> {
+        if !self.render.contains_template("expressions/composite_key") {
+            return Err(CubeError::user(
+                "COMPOSITE_KEY_COUNT_UNSUPPORTED: automatic composite entity count requires a typed tuple dialect".to_string(),
+            ));
+        }
+        self.render
+            .render_template("expressions/composite_key", context! { keys => keys })
+    }
+
     pub fn concat_strings(&self, strings: &Vec<String>) -> Result<String, CubeError> {
         self.render.render_template(
             "expressions/concat_strings",
@@ -1128,5 +1140,41 @@ mod sql_null_order_tests {
                 .collect::<Vec<_>>(),
             vec!["2", "ASC"]
         );
+    }
+}
+
+#[cfg(test)]
+mod composite_count_key_tests {
+    use super::*;
+    use crate::test_fixtures::cube_bridge::MockDriverTools;
+
+    #[test]
+    fn composite_count_key_preserves_types_boundaries_and_complete_key_null_policy() {
+        let templates = PlanSqlTemplates::try_new(Rc::new(MockDriverTools::new()), false).unwrap();
+        let sql = templates
+            .composite_key(&[
+                "parent.numeric_id".to_string(),
+                "parent.text_id".to_string(),
+            ])
+            .unwrap();
+        assert_eq!(sql, "CASE WHEN (parent.numeric_id) IS NOT NULL AND (parent.text_id) IS NOT NULL THEN ROW(parent.numeric_id, parent.text_id) END");
+        assert!(!sql.contains("CAST"));
+        assert!(!sql.contains("||"));
+    }
+
+    #[test]
+    fn composite_count_refuses_dialects_without_typed_tuple_capability() {
+        let render = crate::test_fixtures::cube_bridge::MockSqlTemplatesRender::try_new(
+            std::collections::HashMap::new(),
+        )
+        .unwrap();
+        let driver = MockDriverTools::with_sql_templates(render);
+        let templates = PlanSqlTemplates::try_new(Rc::new(driver), false).unwrap();
+        let error = templates
+            .composite_key(&["a".to_string(), "b".to_string()])
+            .unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("COMPOSITE_KEY_COUNT_UNSUPPORTED"));
     }
 }

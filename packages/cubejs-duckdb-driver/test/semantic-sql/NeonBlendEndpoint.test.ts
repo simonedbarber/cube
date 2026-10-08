@@ -68,10 +68,35 @@ type NodeClosed = {
   operations: Array<{ method: string; path: string; accept?: string }>;
   state: { activeQueries: number; queuedQueries: number; sessions: number; parked: number };
   admission: number;
-  runtime: { duckdbLibraries: string[] };
+  runtime: { duckdbLibraries: string[]; baselineRssBytes?: number; sampledPeakRssBytes?: number; memorySampleIntervalMs?: number };
 };
 
 async function startFleetNode(applicationRoot: string) {
+  const container = process.env.QUERYRAILS_NEON_FLEET_CONTAINER;
+  if (container) {
+    // The existing native packet can consume its same IPC fixture in a frozen
+    // Linux image. Only the explicitly labelled, owned local container may be
+    // stopped; no remote endpoint or running application is accepted here.
+    if (!/^queryrails-neon-owned-[a-z0-9-]{1,32}$/.test(container)) throw new Error('Invalid owned Linux fixture name');
+    const docker = (...args: string[]) => promisify(execFile)('docker', ['--context', 'desktop-linux', ...args], {
+      timeout: 30000, maxBuffer: 1024 * 1024
+    });
+    const identity = await docker('inspect', '--format', '{{index .Config.Labels "queryrails.task"}}|{{index .Config.Labels "queryrails.fixture"}}|{{.State.Running}}', container);
+    if (identity.stdout.trim() !== 'query-operations-recovery|neon-federation|true') throw new Error('Unowned or inactive Linux fixture');
+    const records = async () => (await docker('logs', container)).stdout.split('\n').filter(Boolean).map(line => JSON.parse(line) as NodeReady | NodeClosed);
+    const ready = (await records()).find((record): record is NodeReady => record.type === 'ready');
+    if (!ready) throw new Error('Owned Linux fixture is not ready');
+    const port = (await docker('port', container, '4700/tcp')).stdout.trim();
+    if (!/^127\.0\.0\.1:\d+$/.test(port)) throw new Error('The owned fixture requires a loopback publication');
+    return { ...ready,
+      endpoint: `http://${port}`,
+      stop: async () => {
+        await docker('stop', '--time', '10', container);
+        const closed = (await records()).find((record): record is NodeClosed => record.type === 'closed');
+        if (!closed) throw new Error('Missing Linux fixture cleanup evidence');
+        return closed;
+      } };
+  }
   // A controlled test may preload its pinned private runtime into this owned
   // child. The ordinary fixture continues to use the installed runtime.
   const bootstrap = process.env.QUERYRAILS_NEON_FLEET_FIXTURE_BOOTSTRAP;

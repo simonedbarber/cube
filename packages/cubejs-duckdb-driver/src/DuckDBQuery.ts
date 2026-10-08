@@ -25,6 +25,10 @@ class DuckDBFilter extends BaseFilter {
 }
 
 export class DuckDBQuery extends BaseQuery {
+  public supportsCompositeKeyCount() {
+    return true;
+  }
+
   public newFilter(filter: any): BaseFilter {
     return new DuckDBFilter(this, filter);
   }
