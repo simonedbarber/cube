@@ -13,6 +13,7 @@ pub struct MemberSqlContext<'a> {
     pub templates: &'a PlanSqlTemplates,
     pub name: &'a str,
     pub full_name: &'a str,
+    pub cube_alias: &'a str,
 }
 
 impl<'a> MemberSqlContext<'a> {

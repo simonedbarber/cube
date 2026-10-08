@@ -1,4 +1,5 @@
 use super::super::{MemberSqlContext, ToSql};
+use crate::physical_plan::sql_nodes::AutoPrefixSqlNode;
 use crate::planner::symbols::measure_kinds::{CountMeasure, CountSql};
 use cubenativeutils::CubeError;
 
@@ -10,7 +11,15 @@ impl ToSql for CountMeasure {
                 if pk_sqls.len() > 1 {
                     let keys = pk_sqls
                         .iter()
-                        .map(|pk| ctx.eval_sql_call(pk))
+                        // Qualify each component before ROW/CASE hides its bare
+                        // identifier from the ordinary member-level qualifier.
+                        .map(|pk| {
+                            AutoPrefixSqlNode::auto_prefix_with_cube_name(
+                                ctx.cube_alias,
+                                &ctx.eval_sql_call(pk)?,
+                                ctx.templates,
+                            )
+                        })
                         .collect::<Result<Vec<_>, _>>()?;
                     ctx.templates.composite_key(&keys)
                 } else if let Some(pk_sql) = pk_sqls.first() {

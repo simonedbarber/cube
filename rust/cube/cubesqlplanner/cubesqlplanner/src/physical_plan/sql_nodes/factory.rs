@@ -173,7 +173,7 @@ impl SqlNodesFactory {
         unmasked_root: Option<Rc<dyn SqlNode>>,
     ) -> Rc<dyn SqlNode> {
         let evaluate_sql_processor = MaskedSqlNode::new(
-            EvaluateSqlNode::new(),
+            EvaluateSqlNode::new(self.cube_name_references.clone()),
             false,
             self.group_by_members.clone(),
             skip_masking,

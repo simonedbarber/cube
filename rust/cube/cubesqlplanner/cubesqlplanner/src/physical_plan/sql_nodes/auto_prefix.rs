@@ -62,7 +62,6 @@ impl AutoPrefixSqlNode {
     }
 
     pub fn auto_prefix_with_cube_name(
-        &self,
         cube_name: &str,
         sql: &str,
         templates: &PlanSqlTemplates,
@@ -102,11 +101,11 @@ impl SqlNode for AutoPrefixSqlNode {
         let res = match node.as_ref() {
             MemberSymbol::Dimension(ev) => {
                 let cube_alias = self.resolve_cube_alias(&ev.cube_name());
-                self.auto_prefix_with_cube_name(&cube_alias, &input, templates)?
+                Self::auto_prefix_with_cube_name(&cube_alias, &input, templates)?
             }
             MemberSymbol::Measure(ev) => {
                 let cube_alias = self.resolve_cube_alias(&ev.cube_name());
-                self.auto_prefix_with_cube_name(&cube_alias, &input, templates)?
+                Self::auto_prefix_with_cube_name(&cube_alias, &input, templates)?
             }
             _ => input,
         };

@@ -99,7 +99,88 @@ fn count_measure_variants() {
         .unwrap();
     assert_eq!(
         count_two_pk_sql,
-        "count(CASE WHEN (id) IS NOT NULL AND (user_name) IS NOT NULL THEN ROW(id, user_name) END)"
+        r#"count(CASE WHEN ("users".id) IS NOT NULL AND ("users".user_name) IS NOT NULL THEN ROW("users".id, "users".user_name) END)"#
+    );
+}
+
+#[test]
+fn composite_count_respects_cube_alias_and_measure_masks() {
+    use crate::physical_plan::sql_nodes::SqlNodesFactory;
+    use crate::physical_plan::SqlEvaluatorVisitor;
+    use crate::planner::sql_templates::PlanSqlTemplates;
+    use std::collections::HashMap;
+    use std::rc::Rc;
+
+    let schema = MockSchema::from_yaml(
+        r#"
+cubes:
+  - name: users
+    sql: SELECT 1
+    dimensions:
+      - name: id
+        type: number
+        sql: id
+        primary_key: true
+      - name: user_name
+        type: string
+        sql: "{CUBE}.user_name"
+        primary_key: true
+    measures:
+      - name: count
+        type: count
+      - name: masked_count
+        type: count
+        mask: 12345
+      - name: derived
+        type: number
+        sql: "{masked_count} + 1"
+      - name: explicit_count
+        type: count
+        sql: id
+"#,
+    )
+    .unwrap();
+    let context =
+        TestContext::new_with_masked_members(schema, vec!["users.masked_count".to_string()])
+            .unwrap();
+    let mut factory = SqlNodesFactory::default();
+    factory.set_cube_name_references(HashMap::from([(
+        "users".to_string(),
+        "parent_rows".to_string(),
+    )]));
+    let tools = context.query_tools().query_tools();
+    let visitor =
+        SqlEvaluatorVisitor::new(tools.clone(), Rc::new(factory.cube_ref_evaluator()), None);
+    let templates = PlanSqlTemplates::try_new(
+        context
+            .query_tools()
+            .base_tools()
+            .driver_tools(false)
+            .unwrap(),
+        false,
+    )
+    .unwrap();
+    let processor = factory.default_node_processor(tools);
+    let evaluate = |name: &str| {
+        visitor
+            .apply(
+                &context.create_measure(name).unwrap(),
+                processor.clone(),
+                &templates,
+            )
+            .unwrap()
+    };
+    assert_eq!(
+        evaluate("users.count"),
+        r#"count(CASE WHEN ("parent_rows".id) IS NOT NULL AND ("parent_rows".user_name) IS NOT NULL THEN ROW("parent_rows".id, "parent_rows".user_name) END)"#
+    );
+    assert_eq!(evaluate("users.masked_count"), "(12345)");
+    let derived = evaluate("users.derived");
+    assert!(derived.contains("12345"));
+    assert!(!derived.contains("ROW("));
+    assert_eq!(
+        evaluate("users.explicit_count"),
+        r#"count("parent_rows".id)"#
     );
 }
 

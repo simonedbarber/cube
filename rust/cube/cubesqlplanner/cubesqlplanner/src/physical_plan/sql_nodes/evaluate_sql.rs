@@ -6,16 +6,19 @@ use crate::planner::sql_templates::PlanSqlTemplates;
 use crate::planner::MemberSymbol;
 use cubenativeutils::CubeError;
 use std::any::Any;
+use std::collections::HashMap;
 use std::rc::Rc;
 
 /// Base case of the SQL-node chain: invokes the member symbol's own
 /// `to_sql` to produce the raw SQL fragment. All wrapping nodes
 /// eventually delegate down to this.
-pub struct EvaluateSqlNode {}
+pub struct EvaluateSqlNode {
+    cube_references: HashMap<String, String>,
+}
 
 impl EvaluateSqlNode {
-    pub fn new() -> Rc<Self> {
-        Rc::new(Self {})
+    pub fn new(cube_references: HashMap<String, String>) -> Rc<Self> {
+        Rc::new(Self { cube_references })
     }
 }
 
@@ -29,6 +32,10 @@ impl SqlNode for EvaluateSqlNode {
         templates: &PlanSqlTemplates,
     ) -> Result<String, CubeError> {
         let path = node.compiled_path();
+        let cube_alias = self
+            .cube_references
+            .get(path.cube_name())
+            .unwrap_or(path.cube_name());
         let ctx = MemberSqlContext {
             visitor,
             node_processor: &node_processor,
@@ -36,6 +43,7 @@ impl SqlNode for EvaluateSqlNode {
             templates,
             name: path.name(),
             full_name: path.full_name(),
+            cube_alias,
         };
         node.as_ref().to_sql(&ctx)
     }
