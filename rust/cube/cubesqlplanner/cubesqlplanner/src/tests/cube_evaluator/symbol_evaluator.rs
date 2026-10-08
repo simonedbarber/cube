@@ -90,7 +90,7 @@ fn count_measure_variants() {
         .unwrap();
     assert_eq!(count_one_pk_sql, r#"count("users".id)"#);
 
-    // Test COUNT with two primary keys - should use count(CAST(pk1) || CAST(pk2))
+    // Composite COUNT preserves component types and excludes incomplete keys.
     let schema_two_pk = MockSchema::from_yaml_file("symbol_evaluator/count_two_pk.yaml");
     let context_two_pk = TestContext::new(schema_two_pk).unwrap();
     let count_two_pk_symbol = context_two_pk.create_measure("users.count").unwrap();
@@ -99,7 +99,7 @@ fn count_measure_variants() {
         .unwrap();
     assert_eq!(
         count_two_pk_sql,
-        "count(CAST(id AS STRING) || CAST(user_name AS STRING))"
+        "count(CASE WHEN (id) IS NOT NULL AND (user_name) IS NOT NULL THEN ROW(id, user_name) END)"
     );
 }
 
