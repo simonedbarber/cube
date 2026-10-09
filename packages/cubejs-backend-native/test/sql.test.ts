@@ -1,6 +1,7 @@
 import { Client } from 'pg';
 import { isCI } from '@cubejs-backend/shared';
 import { Writable } from 'stream';
+import { finished } from 'stream/promises';
 
 import * as native from '../js';
 import metaFixture from './meta';
@@ -872,4 +873,144 @@ describe('SQLInterface', () => {
       }
     }
   );
+
+  describe('executed Cube root type in the actual execSql schema writer', () => {
+    // The fixture registers no ports and opens no external database connection.
+    // Every load goes through the existing mocked transport; the native writer,
+    // selected query plan, schema, data and terminal records remain real.
+    async function recordsFor(instance: native.SqlInterfaceInstance, sql: string) {
+      const chunks: Buffer[] = [];
+      const stream = new Writable({
+        write(chunk, _encoding, callback) {
+          chunks.push(Buffer.from(chunk));
+          callback();
+        },
+      });
+      const completed = finished(stream, { cleanup: true });
+      try {
+        await native.execSql(instance, sql, stream);
+        await completed;
+        expect(stream.writableFinished).toBe(true);
+        // Collect end() error chunks as well as schema/data write() chunks.
+        return Buffer.concat(chunks).toString('utf-8').split('\n')
+          .filter(line => line.trim().length)
+          .map((line): Record<string, unknown> => JSON.parse(line));
+      } finally {
+        stream.destroy();
+        await completed.catch(() => undefined);
+      }
+    }
+
+    function sourceMethods(external: boolean) {
+      return {
+        ...interfaceMethods(),
+        sqlApiLoad: jest.fn(async ({ streaming }: { streaming: boolean }) => {
+          // These explicitly limited queries use the existing buffered load lane,
+          // even when the suite runs with CUBESQL_STREAM_MODE=true.
+          expect(streaming).toBe(false);
+          return {
+            results: [{
+              annotation: { measures: {}, dimensions: {}, segments: {}, timeDimensions: {} },
+              data: {
+                members: ['KibanaSampleDataEcommerce.customer_gender', 'KibanaSampleDataEcommerce.maxPrice', 'KibanaSampleDataEcommerce.count'],
+                columns: [['female'], [10], [4]],
+              },
+              lastRefreshTime: '2024-01-01T00:00:00.000Z',
+              external,
+              ...(external ? { usedPreAggregations: {
+                'schema.kibana_main': {
+                  targetTableName: 'schema.kibana_main',
+                  preAggregationId: 'KibanaSampleDataEcommerce.main',
+                  lastUpdatedAt: 1712000000000,
+                  type: 'rollup',
+                },
+              } } : {}),
+            }],
+          };
+        }),
+      };
+    }
+
+    // TableValue serializes numeric cells as text; native schema still proves
+    // their numeric types. Assert exact wire cells without JS number coercion.
+    test.each([
+      { name: 'direct modeled scan', sql: 'SELECT customer_gender, MEASURE(count) AS cnt FROM KibanaSampleDataEcommerce GROUP BY 1 LIMIT 10;', type: 'regular', names: ['customer_gender', 'cnt'], columnTypes: ['String', 'Int64'], row: ['female', '4'] },
+      { name: 'calculated projection over modeled measures', sql: 'SELECT customer_gender, ROUND(MEASURE(maxPrice) / MEASURE(count), 2) AS avg_value, MEASURE(count) AS cnt FROM KibanaSampleDataEcommerce GROUP BY 1 ORDER BY 3 DESC LIMIT 10;', type: 'post_processing', names: ['customer_gender', 'avg_value', 'cnt'], columnTypes: ['String', 'Double', 'Int64'], row: ['female', '2.5', '4'] },
+    ])('$name reports its selected root type independent of load freshness metadata', async ({ sql, type, names, columnTypes, row }) => {
+      // A pre-aggregation disclosure cannot turn a direct scan into pushdown,
+      // nor turn a residual projection into a direct scan.
+      for (const external of [false, true]) {
+        const methods = sourceMethods(external);
+        const instance = await native.registerInterface({
+          ...methods,
+          canSwitchUserForSession: () => true,
+        });
+        try {
+          const records = await recordsFor(instance, sql);
+          expect(records.filter(record => record.error !== undefined)).toEqual([]);
+          const schemas = records.filter(record => Array.isArray(record.schema));
+          expect(schemas).toHaveLength(1);
+          expect(schemas[0]).toMatchObject({ query_type: type, lastRefreshTime: '2024-01-01T00:00:00.000Z' });
+          expect(schemas[0]!.schema).toEqual(names.map((name, index) => expect.objectContaining({ name, column_type: columnTypes[index] })));
+          expect(records.filter(record => !Array.isArray(record.schema)).every(record => record.query_type === undefined)).toBe(true);
+          expect(records.flatMap(record => (Array.isArray(record.data) ? record.data : []))).toEqual([row]);
+          expect(methods.sqlApiLoad).toHaveBeenCalledTimes(1);
+          if (external) {
+            expect(schemas[0]).toMatchObject({ external: true, usedPreAggregations: { 'schema.kibana_main': { type: 'rollup' } } });
+          } else {
+            expect(schemas[0]).not.toHaveProperty('external');
+            expect(schemas[0]).not.toHaveProperty('usedPreAggregations');
+          }
+        } finally {
+          await native.shutdownInterface(instance, 'fast');
+        }
+      }
+    });
+
+    test('a successful source-free SELECT still reports a real post-processing root', async () => {
+      const methods = interfaceMethods();
+      const instance = await native.registerInterface({ ...methods, canSwitchUserForSession: () => true });
+      try {
+        const records = await recordsFor(instance, "SELECT 7 AS answer, 'regular pushdown' AS prose;");
+        expect(records.filter(record => record.error !== undefined)).toEqual([]);
+        const schemas = records.filter(record => Array.isArray(record.schema));
+        expect(schemas).toHaveLength(1);
+        expect(schemas[0]).toMatchObject({
+          query_type: 'post_processing',
+          schema: [
+            { name: 'answer', column_type: 'Int64' },
+            { name: 'prose', column_type: 'String' },
+          ],
+        });
+        expect(records.flatMap(record => (Array.isArray(record.data) ? record.data : []))).toEqual([['7', 'regular pushdown']]);
+        expect(methods.sqlApiLoad).not.toHaveBeenCalled();
+        expect(methods.sql).not.toHaveBeenCalled();
+        expect(methods.stream).not.toHaveBeenCalled();
+      } finally {
+        await native.shutdownInterface(instance, 'fast');
+      }
+    });
+
+    test.each([
+      { name: 'non-SELECT plan', sql: 'SET timezone = \'UTC\';', loadFailure: false },
+      { name: 'compilation failure', sql: 'SELECT missing_member FROM KibanaSampleDataEcommerce;', loadFailure: false },
+      { name: 'source initialization failure', sql: 'SELECT customer_gender, MEASURE(count) AS cnt FROM KibanaSampleDataEcommerce GROUP BY 1 LIMIT 10;', loadFailure: true },
+    ])('$name emits a terminal error without fabricating a completed schema root type', async ({ sql, loadFailure }) => {
+      const methods = {
+        ...interfaceMethods(),
+        sqlApiLoad: jest.fn(async () => ({ error: 'Fixture source failed before stream initialization' })),
+      };
+      const instance = await native.registerInterface({ ...methods, canSwitchUserForSession: () => true });
+      try {
+        const records = await recordsFor(instance, sql);
+        expect(records.filter(record => typeof record.error === 'string')).toHaveLength(1);
+        expect(records.filter(record => Array.isArray(record.schema))).toEqual([]);
+        expect(records.filter(record => Array.isArray(record.data))).toEqual([]);
+        expect(records.every(record => record.query_type === undefined)).toBe(true);
+        expect(methods.sqlApiLoad).toHaveBeenCalledTimes(loadFailure ? 1 : 0);
+      } finally {
+        await native.shutdownInterface(instance, 'fast');
+      }
+    });
+  });
 });

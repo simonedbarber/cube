@@ -156,11 +156,7 @@ export type Sql4SqlOk = {
 };
 export type Sql4SqlError = { error: string };
 export type Sql4SqlCommon = {
-  query_type: {
-    regular: boolean;
-    post_processing: boolean;
-    pushdown: boolean;
-  }
+  query_type: 'regular' | 'post_processing' | 'pushdown';
 };
 
 export type Sql4SqlResponse = Sql4SqlCommon & (Sql4SqlOk | Sql4SqlError);

@@ -20,7 +20,7 @@ use crate::cross::CLRepr;
 use crate::cubesql_utils::with_session;
 use crate::logger::NodeBridgeLogger;
 use crate::rest4sql::rest4sql;
-use crate::sql4sql::sql4sql;
+use crate::sql4sql::{append_executed_query_type, sql4sql};
 use crate::stream::{OnCloseHandler, OnDrainHandler};
 use crate::tokio_runtime_node;
 use crate::transport::NodeBridgeTransport;
@@ -492,6 +492,8 @@ async fn handle_sql_query(
             // Send schema first
             let mut schema_response = Map::new();
             schema_response.insert("schema".into(), serde_json::to_value(&columns)?);
+            // Report the selected Cube logical plan supplied to get_df_batches.
+            append_executed_query_type(&mut schema_response, &query_plan);
 
             // Result freshness metadata is recorded on the span by `load_data`,
             // so it survives post-processing nodes (a calculated projection over

@@ -18,21 +18,54 @@ use crate::cubesql_utils::with_session;
 use crate::tokio_runtime_node;
 use crate::utils::NonDebugInRelease;
 
-enum Sql4SqlQueryType {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Sql4SqlQueryType {
     Regular,
     PostProcessing,
     Pushdown,
 }
 
 impl Sql4SqlQueryType {
-    pub fn to_js<'ctx>(&self, cx: &mut impl Context<'ctx>) -> JsResult<'ctx, JsString> {
-        let self_str = match self {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
             Self::Regular => "regular",
             Self::PostProcessing => "post_processing",
             Self::Pushdown => "pushdown",
-        };
+        }
+    }
 
-        Ok(cx.string(self_str))
+    pub fn to_js<'ctx>(&self, cx: &mut impl Context<'ctx>) -> JsResult<'ctx, JsString> {
+        Ok(cx.string(self.as_str()))
+    }
+}
+
+/// Native root-plan classification shared with SQL translation. No SQL text,
+/// freshness, pre-aggregation or application wrapper participates in it.
+pub(crate) fn classify_query_type(plan: &LogicalPlan) -> Option<Sql4SqlQueryType> {
+    match plan {
+        LogicalPlan::Extension(extension) => {
+            if extension.node.as_any().is::<CubeScanWrappedSqlNode>() {
+                Some(Sql4SqlQueryType::Pushdown)
+            } else if extension.node.as_any().is::<CubeScanNode>() {
+                Some(Sql4SqlQueryType::Regular)
+            } else {
+                None
+            }
+        }
+        _ => Some(Sql4SqlQueryType::PostProcessing),
+    }
+}
+
+/// Called only after get_df_batches has initialized this exact executed plan.
+/// Non-SELECT and unrecognized extension roots carry no tier claim.
+pub(crate) fn append_executed_query_type(
+    schema: &mut serde_json::Map<String, serde_json::Value>,
+    query_plan: &cubesql::compile::QueryPlan,
+) {
+    if let cubesql::compile::QueryPlan::DataFusionSelect(plan, _) = query_plan {
+        if let Some(query_type) = classify_query_type(plan) {
+            schema.insert("query_type".into(), query_type.as_str().into());
+        }
     }
 }
 
@@ -102,6 +135,10 @@ async fn get_sql(
         .auth_context()
         .ok_or_else(|| CubeError::internal("Unexpected missing auth context".to_string()))?;
 
+    let query_type = classify_query_type(plan.as_ref()).ok_or_else(|| {
+        CubeError::internal("Unexpected extension in logical plan root".to_string())
+    })?;
+
     match plan.as_ref() {
         LogicalPlan::Extension(extension) => {
             let cube_scan_wrapped_sql = extension
@@ -115,7 +152,7 @@ async fn get_sql(
                         sql: cube_scan_wrapped_sql.wrapped_sql.sql.clone(),
                         values: cube_scan_wrapped_sql.wrapped_sql.values.clone(),
                     },
-                    query_type: Sql4SqlQueryType::Pushdown,
+                    query_type,
                 });
             }
 
@@ -140,7 +177,7 @@ async fn get_sql(
                         sql: wrapped_sql.wrapped_sql.sql.clone(),
                         values: wrapped_sql.wrapped_sql.values.clone(),
                     },
-                    query_type: Sql4SqlQueryType::Regular,
+                    query_type,
                 });
             }
 
@@ -152,7 +189,7 @@ async fn get_sql(
             result: Sql4SqlResponseResult::Error {
                 error: "Provided query can not be executed without post-processing.".to_string(),
             },
-            query_type: Sql4SqlQueryType::PostProcessing,
+            query_type,
         }),
     }
 }
@@ -245,4 +282,123 @@ pub fn sql4sql(mut cx: FunctionContext) -> JsResult<JsValue> {
     });
 
     Ok(promise.upcast::<JsValue>())
+}
+
+#[cfg(test)]
+mod executed_query_type_tests {
+    use super::*;
+    use cubesql::compile::datafusion::{
+        execution::context::SessionContext,
+        logical_plan::{
+            plan::{Extension, Limit},
+            DFSchema, Expr, UserDefinedLogicalNode,
+        },
+    };
+    use cubesql::compile::engine::df::{scan::CubeScanOptions, wrapper::SqlQuery};
+    use cubesql::compile::{CommandCompletion, QueryPlan, StatusFlags};
+    use cubesql::transport::TransportLoadRequestQuery;
+    use std::{any::Any, fmt};
+
+    fn regular_root() -> LogicalPlan {
+        LogicalPlan::Extension(Extension {
+            node: Arc::new(CubeScanNode::new(
+                Arc::new(DFSchema::empty()),
+                vec![],
+                TransportLoadRequestQuery::default(),
+                Arc::new(NativeSQLAuthContext {
+                    user: None,
+                    superuser: false,
+                    security_context: NonDebugInRelease::from(None),
+                }),
+                CubeScanOptions {
+                    sql_order_nulls_first: vec![],
+                    change_user: None,
+                    max_records: None,
+                    cache_mode: None,
+                    throw_continue_wait: false,
+                },
+                vec![],
+                None,
+            )),
+        })
+    }
+    fn schema_for(plan: LogicalPlan) -> serde_json::Value {
+        let plan = QueryPlan::DataFusionSelect(plan, SessionContext::new());
+        let mut schema = serde_json::Map::new();
+        schema.insert(
+            "schema".into(),
+            serde_json::json!([{ "name": "n", "column_type": "Int64" }]),
+        );
+        append_executed_query_type(&mut schema, &plan);
+        serde_json::Value::Object(schema)
+    }
+
+    #[test]
+    fn emitted_metadata_classifies_actual_typed_select_root_and_preserves_schema() {
+        let regular = schema_for(regular_root());
+        assert_eq!(regular["query_type"], "regular");
+        assert_eq!(regular["schema"][0]["name"], "n");
+        let wrapped = LogicalPlan::Extension(Extension {
+            node: Arc::new(CubeScanWrappedSqlNode::new(
+                Arc::new(regular_root()),
+                // Deliberately misleading prose cannot affect typed-plan classification.
+                SqlQuery::new("SELECT 'post_processing regular'".to_string(), vec![]),
+                TransportLoadRequestQuery::default(),
+                vec![],
+            )),
+        });
+        assert_eq!(schema_for(wrapped)["query_type"], "pushdown");
+        let residual = LogicalPlan::Limit(Limit {
+            skip: Some(0),
+            fetch: Some(1),
+            input: Arc::new(regular_root()),
+        });
+        assert_eq!(schema_for(residual)["query_type"], "post_processing");
+    }
+
+    #[derive(Debug)]
+    struct UnrecognizedRoot {
+        schema: Arc<DFSchema>,
+    }
+    impl UserDefinedLogicalNode for UnrecognizedRoot {
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+        fn inputs(&self) -> Vec<&LogicalPlan> {
+            vec![]
+        }
+        fn schema(&self) -> &Arc<DFSchema> {
+            &self.schema
+        }
+        fn expressions(&self) -> Vec<Expr> {
+            vec![]
+        }
+        fn fmt_for_explain(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            write!(f, "Unknown")
+        }
+        fn from_template(
+            &self,
+            _exprs: &[Expr],
+            _inputs: &[LogicalPlan],
+        ) -> Arc<dyn UserDefinedLogicalNode + Send + Sync> {
+            Arc::new(Self {
+                schema: self.schema.clone(),
+            })
+        }
+    }
+    #[test]
+    fn unrecognized_or_non_select_plan_does_not_emit_a_default_tier() {
+        let unknown = LogicalPlan::Extension(Extension {
+            node: Arc::new(UnrecognizedRoot {
+                schema: Arc::new(DFSchema::empty()),
+            }),
+        });
+        assert!(schema_for(unknown).get("query_type").is_none());
+        let mut schema = serde_json::Map::new();
+        append_executed_query_type(
+            &mut schema,
+            &QueryPlan::MetaOk(StatusFlags::empty(), CommandCompletion::Set),
+        );
+        assert!(!schema.contains_key("query_type"));
+    }
 }
