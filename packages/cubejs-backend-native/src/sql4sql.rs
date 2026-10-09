@@ -34,7 +34,7 @@ impl Sql4SqlQueryType {
         }
     }
 
-    pub fn to_js<'ctx>(&self, cx: &mut impl Context<'ctx>) -> JsResult<'ctx, JsString> {
+    pub fn to_js<'ctx>(self, cx: &mut impl Context<'ctx>) -> JsResult<'ctx, JsString> {
         Ok(cx.string(self.as_str()))
     }
 }
