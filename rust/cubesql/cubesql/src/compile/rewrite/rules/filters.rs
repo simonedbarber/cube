@@ -5385,38 +5385,6 @@ impl FilterRules {
         let date_range_start_op_var = date_range_start_op_var.parse().unwrap();
         let date_range_end_op_var = date_range_end_op_var.parse().unwrap();
         move |egraph, subst| {
-            fn resolve_time_delta(date_var: &String, op: &String) -> Option<String> {
-                if op == "afterDate" {
-                    return increment_iso_timestamp_time(date_var);
-                } else if op == "beforeDate" {
-                    return decrement_iso_timestamp_time(date_var);
-                } else {
-                    return Some(date_var.clone());
-                }
-            }
-
-            fn increment_iso_timestamp_time(date_var: &String) -> Option<String> {
-                let timestamp = parse_date_str(date_var);
-                let value = match timestamp {
-                    Ok(val) => format_iso_timestamp(
-                        val.checked_add_signed(Duration::milliseconds(1)).unwrap(),
-                    ),
-                    Err(_) => return None,
-                };
-                return Some(value);
-            }
-
-            fn decrement_iso_timestamp_time(date_var: &String) -> Option<String> {
-                let timestamp = parse_date_str(date_var);
-                let value = match timestamp {
-                    Ok(val) => format_iso_timestamp(
-                        val.checked_sub_signed(Duration::milliseconds(1)).unwrap(),
-                    ),
-                    Err(_) => return None,
-                };
-                return Some(value);
-            }
-
             for date_range_start in
                 var_iter!(egraph[subst[date_range_start_var]], FilterMemberValues)
             {
@@ -5429,8 +5397,13 @@ impl FilterRules {
                         for date_range_end_op in
                             var_iter!(egraph[subst[date_range_end_op_var]], FilterMemberOp)
                         {
-                            let valid_left_filters = ["afterDate", "afterOrOnDate"];
-                            let valid_right_filters = ["beforeDate", "beforeOrOnDate"];
+                            // inDateRange has inclusive bounds. A strict SQL
+                            // comparator cannot be converted by adding or
+                            // subtracting a millisecond: source timestamps can
+                            // fall between those coordinates. Keep beforeDate
+                            // and afterDate in the native predicate forest.
+                            let valid_left_filters = ["afterOrOnDate"];
+                            let valid_right_filters = ["beforeOrOnDate"];
 
                             let swap_left_and_right;
 
@@ -5447,16 +5420,8 @@ impl FilterRules {
                             }
 
                             let mut result = Vec::new();
-                            let Some(resolved_start_date) =
-                                resolve_time_delta(&date_range_start[0], date_range_start_op)
-                            else {
-                                return false;
-                            };
-                            let Some(resolved_end_date) =
-                                resolve_time_delta(&date_range_end[0], date_range_end_op)
-                            else {
-                                return false;
-                            };
+                            let resolved_start_date = date_range_start[0].clone();
+                            let resolved_end_date = date_range_end[0].clone();
 
                             if swap_left_and_right {
                                 result.extend(vec![resolved_end_date]);

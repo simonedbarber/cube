@@ -869,3 +869,59 @@ fn test_time_dimension_date_range() {
         &["2024-01-01T00:00:00.000", "2024-12-31T23:59:59.999"],
     );
 }
+
+#[test]
+fn test_sql_half_open_date_predicates_keep_exact_source_comparators() {
+    let result = build(indoc! {r#"
+        filters:
+          - dimension: visitors.created_at
+            operator: afterOrOnDate
+            values:
+              - "2024-05-15T00:00:00.000Z"
+          - dimension: visitors.created_at
+            operator: beforeDate
+            values:
+              - "2024-07-01T00:00:00.000Z"
+    "#});
+    assert_filter(
+        &result,
+        r#"("visitors".created_at >= $_0_$::timestamptz) AND ("visitors".created_at < $_1_$::timestamptz)"#,
+        &["2024-05-15T00:00:00.000Z", "2024-07-01T00:00:00.000Z"],
+    );
+    // Source microseconds need no assumed adjacency. This real poison lies
+    // below midnight but above the old exclusive-to-inclusive -1ms mutation.
+    let upper = chrono::NaiveDate::from_ymd_opt(2024, 7, 1)
+        .unwrap()
+        .and_hms_opt(0, 0, 0)
+        .unwrap();
+    let poison = upper - chrono::Duration::microseconds(500);
+    assert!(poison < upper);
+    assert!(poison > upper - chrono::Duration::milliseconds(1));
+}
+
+#[test]
+fn test_sql_open_lower_date_predicates_keep_exact_source_comparators() {
+    let result = build(indoc! {r#"
+        filters:
+          - dimension: visitors.created_at
+            operator: afterDate
+            values:
+              - "2024-05-15T00:00:00.000Z"
+          - dimension: visitors.created_at
+            operator: beforeOrOnDate
+            values:
+              - "2024-07-01T00:00:00.000Z"
+    "#});
+    assert_filter(
+        &result,
+        r#"("visitors".created_at > $_0_$::timestamptz) AND ("visitors".created_at <= $_1_$::timestamptz)"#,
+        &["2024-05-15T00:00:00.000Z", "2024-07-01T00:00:00.000Z"],
+    );
+    let lower = chrono::NaiveDate::from_ymd_opt(2024, 5, 15)
+        .unwrap()
+        .and_hms_opt(0, 0, 0)
+        .unwrap();
+    let poison = lower + chrono::Duration::microseconds(500);
+    assert!(poison > lower);
+    assert!(poison < lower + chrono::Duration::milliseconds(1));
+}

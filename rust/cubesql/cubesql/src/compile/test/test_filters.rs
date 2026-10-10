@@ -386,3 +386,153 @@ async fn test_sql_not_equal_preserves_null_rejection_and_branch_locality() {
         assert_eq!(actual, expected, "{}: {:?}", predicate, filters);
     }
 }
+
+/// A SQL strict bound must reach the source as the same comparator, not an
+/// inclusive timeDimension dateRange shifted by an assumed timestamp quantum.
+#[tokio::test]
+async fn test_strict_date_pair_keeps_native_predicate_bounds() {
+    init_testing_logger();
+    fn matches(filter: &V1LoadRequestQueryFilterItem, row: Option<chrono::NaiveDateTime>) -> bool {
+        if let Some(children) = &filter.and {
+            return children
+                .iter()
+                .all(|child| matches(&serde_json::from_value(child.clone()).unwrap(), row));
+        }
+        assert!(filter.or.is_none(), "original AND cannot become OR");
+        let Some(row) = row else { return false; };
+        assert_eq!(
+            filter.member.as_deref(),
+            Some("KibanaSampleDataEcommerce.order_date")
+        );
+        let bound =
+            crate::compile::date_parser::parse_date_str(&filter.values.as_ref().unwrap()[0])
+                .unwrap();
+        match filter.operator.as_deref().unwrap() {
+            "afterOrOnDate" => row >= bound,
+            "afterDate" => row > bound,
+            "beforeOrOnDate" => row <= bound,
+            "beforeDate" => row < bound,
+            operator => panic!("unexpected date operator {}", operator),
+        }
+    }
+    let rows = [
+        Some("2024-05-15T00:00:00"),
+        Some("2024-05-15T00:00:00.000500"),
+        Some("2024-06-30T23:59:59.999500"),
+        Some("2024-07-01T00:00:00"),
+        None,
+    ]
+    .map(|value| value.map(|value| crate::compile::date_parser::parse_date_str(value).unwrap()));
+    for (lower_op, upper_op, lower_filter, upper_filter, expected) in [
+        (
+            ">=",
+            "<",
+            "afterOrOnDate",
+            "beforeDate",
+            [true, true, true, false, false],
+        ),
+        (
+            ">",
+            "<=",
+            "afterDate",
+            "beforeOrOnDate",
+            [false, true, true, true, false],
+        ),
+        (
+            ">",
+            "<",
+            "afterDate",
+            "beforeDate",
+            [false, true, true, false, false],
+        ),
+    ] {
+        for reversed in [false, true] {
+            let lower = format!("order_date {lower_op} '2024-05-15T00:00:00'");
+            let upper = format!("order_date {upper_op} '2024-07-01T00:00:00'");
+            let predicate = if reversed {
+                format!("({upper} AND {lower})")
+            } else {
+                format!("({lower} AND {upper})")
+            };
+            let query_plan = convert_select_to_query_plan(
+                format!(
+                    "SELECT DATE_TRUNC('month', order_date) AS month, MEASURE(sumPrice) \
+                    FROM KibanaSampleDataEcommerce WHERE {predicate} GROUP BY 1"
+                ),
+                DatabaseProtocol::PostgreSQL,
+            )
+            .await;
+            let request = query_plan.as_logical_plan().find_cube_scan().request;
+            assert_eq!(
+                request.measures,
+                Some(vec!["KibanaSampleDataEcommerce.sumPrice".to_string()])
+            );
+            assert_eq!(
+                request.time_dimensions,
+                Some(vec![V1LoadRequestQueryTimeDimension {
+                    dimension: "KibanaSampleDataEcommerce.order_date".to_string(),
+                    granularity: Some("month".to_string()),
+                    date_range: None,
+                }])
+            );
+            let filters = request.filters.unwrap();
+            let actual = rows.map(|row| filters.iter().all(|filter| matches(filter, row)));
+            assert_eq!(actual, expected, "{predicate}: {filters:?}");
+            assert_eq!(filters.len(), 2, "strict forest: {filters:?}");
+            for (operator, value) in [
+                (lower_filter, "2024-05-15T00:00:00.000Z"),
+                (upper_filter, "2024-07-01T00:00:00.000Z"),
+            ] {
+                assert_eq!(
+                    filters
+                        .iter()
+                        .filter(|filter| {
+                            filter.member.as_deref() == Some("KibanaSampleDataEcommerce.order_date")
+                                && filter.operator.as_deref() == Some(operator)
+                                && filter.values.as_ref() == Some(&vec![value.to_string()])
+                                && filter.and.is_none()
+                                && filter.or.is_none()
+                        })
+                        .count(),
+                    1,
+                    "original comparator {operator}: {filters:?}"
+                );
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn test_inclusive_date_pair_keeps_existing_time_dimension_range() {
+    init_testing_logger();
+    for reversed in [false, true] {
+        let lower = "order_date >= '2024-05-15T00:00:00'";
+        let upper = "order_date <= '2024-07-01T00:00:00'";
+        let predicate = if reversed {
+            format!("({upper} AND {lower})")
+        } else {
+            format!("({lower} AND {upper})")
+        };
+        let query_plan = convert_select_to_query_plan(
+            format!(
+                "SELECT DATE_TRUNC('month', order_date) AS month, MEASURE(sumPrice) \
+                FROM KibanaSampleDataEcommerce WHERE {predicate} GROUP BY 1"
+            ),
+            DatabaseProtocol::PostgreSQL,
+        )
+        .await;
+        let request = query_plan.as_logical_plan().find_cube_scan().request;
+        assert_eq!(
+            request.time_dimensions,
+            Some(vec![V1LoadRequestQueryTimeDimension {
+                dimension: "KibanaSampleDataEcommerce.order_date".to_string(),
+                granularity: Some("month".to_string()),
+                date_range: Some(serde_json::json!([
+                    "2024-05-15T00:00:00.000Z",
+                    "2024-07-01T00:00:00.000Z"
+                ])),
+            }])
+        );
+        assert!(request.filters.as_ref().map_or(true, Vec::is_empty));
+    }
+}
