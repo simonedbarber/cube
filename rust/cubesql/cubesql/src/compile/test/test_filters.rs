@@ -399,7 +399,9 @@ async fn test_strict_date_pair_keeps_native_predicate_bounds() {
                 .all(|child| matches(&serde_json::from_value(child.clone()).unwrap(), row));
         }
         assert!(filter.or.is_none(), "original AND cannot become OR");
-        let Some(row) = row else { return false; };
+        let Some(row) = row else {
+            return false;
+        };
         assert_eq!(
             filter.member.as_deref(),
             Some("KibanaSampleDataEcommerce.order_date")
