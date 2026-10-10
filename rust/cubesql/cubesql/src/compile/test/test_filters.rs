@@ -535,6 +535,6 @@ async fn test_inclusive_date_pair_keeps_existing_time_dimension_range() {
                 ])),
             }])
         );
-        assert!(request.filters.as_ref().map_or(true, Vec::is_empty));
+        assert!(request.filters.as_ref().is_none_or(Vec::is_empty));
     }
 }
